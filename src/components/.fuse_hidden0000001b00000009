@@ -1,0 +1,178 @@
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
+import { useAuth } from '../lib/AuthContext';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
+
+export const SettingsView: React.FC = () => {
+  const { user, signOut } = useAuth();
+  const [lrAutoSync, setLrAutoSync] = useState(true);
+  const [visionVersion, setVisionVersion] = useState('2.4-rt');
+  const [cloudBackup, setCloudBackup] = useState(true);
+  const [savedToast, setSavedToast] = useState(false);
+
+  const handleSave = () => {
+    setSavedToast(true);
+    setTimeout(() => setSavedToast(false), 2000);
+  };
+
+  return (
+    <div className="max-w-4xl space-y-8 pb-20">
+      {savedToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed top-24 right-8 z-50 bg-[#171f33] border border-[#10b981]/50 text-[#dbe2fd] px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-['Geist']"
+        >
+          <span className="material-symbols-outlined text-[#10b981]">check_circle</span>
+          <span className="text-sm font-medium">Settings saved to LensFlow Core</span>
+        </motion.div>
+      )}
+
+      <div>
+        <h1 className="font-['Geist'] text-2xl sm:text-3xl font-bold tracking-tight text-[#dbe2fd]">
+          System &amp; Pipeline Settings
+        </h1>
+        <p className="text-[#94a3b8] text-xs mt-1 font-data-mono">
+          Configure AI compute models, Lightroom Classic integration, and automated routing rules.
+        </p>
+      </div>
+
+      <div className="space-y-4 sm:space-y-6">
+        {isSupabaseConfigured && user && (
+          <div className="bg-[#171f33] rounded-2xl p-4 sm:p-6 border border-white/10 shadow-lg space-y-4">
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-[#6366f1]/20 text-[#6366f1] rounded-xl shrink-0">
+                  <span className="material-symbols-outlined text-xl">account_circle</span>
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-['Geist'] text-base font-bold text-white truncate">
+                    {user.user_metadata?.full_name || 'Account'}
+                  </h3>
+                  <p className="text-xs text-[#908fa0] font-data-mono truncate">{user.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={signOut}
+                className="shrink-0 px-3 py-2 sm:px-4 sm:py-2.5 bg-[#0b1326] border border-white/10 hover:bg-[#222a3e] rounded-xl text-xs font-data-mono text-[#dbe2fd] transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lightroom Integration Card */}
+        <div className="bg-[#171f33] rounded-2xl p-4 sm:p-6 border border-white/10 shadow-lg space-y-4">
+          <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+            <div className="p-2 bg-[#22d3ee]/20 text-[#22d3ee] rounded-xl shrink-0">
+              <span className="material-symbols-outlined text-xl">sync</span>
+            </div>
+            <div>
+              <h3 className="font-['Geist'] text-base font-bold text-white">Adobe Lightroom Classic Bridge</h3>
+              <p className="text-xs text-[#908fa0] font-data-mono">Direct catalog 2-way synchronization</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs font-data-mono">
+            <label className="flex items-start sm:items-center justify-between gap-3 text-[#dbe2fd] cursor-pointer">
+              <div className="pr-2">
+                <span className="block font-medium">Auto-sync Lightroom metadata &amp; color flags</span>
+                <span className="text-[11px] text-[#908fa0]">Exports XMP sidecars whenever tags or ratings change in LensFlow</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={lrAutoSync}
+                onChange={(e) => setLrAutoSync(e.target.checked)}
+                className="w-4 h-4 mt-0.5 sm:mt-0 rounded accent-[#6366f1] bg-[#0b1326] shrink-0"
+              />
+            </label>
+
+            <div className="p-3 bg-[#0b1326] rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-[#908fa0]">Catalog Path:</span>
+                <span className="text-[#dbe2fd] ml-1.5 sm:ml-2 break-all sm:break-normal">~/Pictures/Lightroom/Master_Catalog.lrcat</span>
+              </div>
+              <span className="text-[#10b981] font-bold text-[11px] self-start sm:self-auto shrink-0 bg-[#10b981]/10 px-2 py-0.5 rounded border border-[#10b981]/20">CONNECTED</span>
+            </div>
+          </div>
+        </div>
+
+        {/* AI Vision Stack */}
+        <div className="bg-[#171f33] rounded-2xl p-4 sm:p-6 border border-white/10 shadow-lg space-y-4">
+          <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+            <div className="p-2 bg-[#6366f1]/20 text-[#6366f1] rounded-xl shrink-0">
+              <span className="material-symbols-outlined text-xl">psychology</span>
+            </div>
+            <div>
+              <h3 className="font-['Geist'] text-base font-bold text-white">LensFlow Vision Engine</h3>
+              <p className="text-xs text-[#908fa0] font-data-mono">Deep learning neural inference hardware</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 text-xs font-data-mono">
+            <div>
+              <label className="text-[#908fa0] uppercase tracking-wider block mb-1.5 font-label-caps">
+                Neural Inference Model
+              </label>
+              <select
+                value={visionVersion}
+                onChange={(e) => setVisionVersion(e.target.value)}
+                className="w-full bg-[#0b1326] border border-white/10 rounded-xl px-3 py-2.5 text-[#dbe2fd] focus:outline-none text-xs truncate"
+              >
+                <option value="2.4-rt">LensFlow Vision v2.4 (Ultra-Fast TensorRT · 45 FPS)</option>
+                <option value="2.0-hq">LensFlow Vision v2.0 HQ (High-Res Facial Emotion Extraction)</option>
+              </select>
+            </div>
+
+            <label className="flex items-start sm:items-center justify-between gap-3 text-[#dbe2fd] cursor-pointer">
+              <div className="pr-2">
+                <span className="block font-medium">Cloud Neural Sync &amp; Backup</span>
+                <span className="text-[11px] text-[#908fa0]">Store AI classification embeddings in secure cloud vault</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={cloudBackup}
+                onChange={(e) => setCloudBackup(e.target.checked)}
+                className="w-4 h-4 mt-0.5 sm:mt-0 rounded accent-[#6366f1] bg-[#0b1326] shrink-0"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Storage Volume Readout */}
+        <div className="bg-[#171f33] rounded-2xl p-4 sm:p-6 border border-white/10 shadow-lg space-y-4">
+          <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+            <div className="p-2 bg-[#10b981]/20 text-[#10b981] rounded-xl shrink-0">
+              <span className="material-symbols-outlined text-xl">hard_drive</span>
+            </div>
+            <div>
+              <h3 className="font-['Geist'] text-base font-bold text-white">Storage &amp; Scratch Disks</h3>
+              <p className="text-xs text-[#908fa0] font-data-mono">Local NVMe cache &amp; NAS volumes</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs font-data-mono">
+            <div>
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-1 mb-1.5">
+                <span className="text-[#908fa0]">NVMe Scratch (High Speed Cache)</span>
+                <span className="text-[#dbe2fd]">78% Used (3.12 TB / 4.00 TB)</span>
+              </div>
+              <div className="w-full bg-[#0b1326] h-2 rounded-full overflow-hidden">
+                <div className="bg-[#6366f1] h-full rounded-full" style={{ width: '78%' }}></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={handleSave}
+          className="w-full sm:w-auto px-6 py-3 bg-[#6366f1] hover:bg-[#5254db] text-white rounded-xl text-xs font-data-mono font-bold transition-all shadow-[0_0_20px_rgba(99,102,241,0.35)] text-center"
+        >
+          Save Configuration
+        </button>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,697 @@
+import React, { useState } from 'react';
+import { MediaAsset, BucketCategory, HumanFilter, LightingVerdict } from '../types';
+import { motion } from 'motion/react';
+
+interface BucketsViewProps {
+  category: BucketCategory;
+  onCategoryChange: (cat: BucketCategory) => void;
+  assets: MediaAsset[];
+  selectedAsset: MediaAsset | null;
+  onSelectAsset: (asset: MediaAsset | null) => void;
+  onEditTags: (asset: MediaAsset) => void;
+}
+
+type VideoFilter = 'all' | LightingVerdict;
+
+function formatDuration(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '--:--';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+export const BucketsView: React.FC<BucketsViewProps> = ({
+  category,
+  onCategoryChange,
+  assets,
+  selectedAsset,
+  onSelectAsset,
+  onEditTags
+}) => {
+  const [humanFilter, setHumanFilter] = useState<HumanFilter>('all');
+  const [videoFilter, setVideoFilter] = useState<VideoFilter>('all');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [sortBy, setSortBy] = useState<'confidence' | 'newest' | 'joy' | 'lighting'>('confidence');
+
+  // Videos live only in the Videos bucket — the subject buckets are stills-only,
+  // so a clip never shows up in two places.
+  const categoryAssets = assets.filter((asset) => {
+    if (category === 'videos') return asset.mediaKind === 'video';
+    if (asset.mediaKind === 'video') return false;
+    if (category === 'humans') return asset.primaryCategory === 'human';
+    return asset.primaryCategory === 'nonhuman';
+  });
+
+  // Apply sub-filters
+  const filteredAssets = categoryAssets.filter((asset) => {
+    if (category === 'humans') {
+      if (humanFilter === 'solo' && asset.aiHumanDetails?.groupType !== 'solo') return false;
+      if (humanFilter === 'couples' && asset.aiHumanDetails?.groupType !== 'duo') return false;
+      if (humanFilter === 'groups' && asset.aiHumanDetails?.groupType !== 'small_group' && asset.aiHumanDetails?.groupType !== 'crowd') return false;
+      if (humanFilter === 'mood' && !asset.aiMoodAnalysis) return false;
+    }
+    if (category === 'videos' && videoFilter !== 'all') {
+      if ((asset.lightingQuality?.verdict ?? 'good') !== videoFilter) return false;
+    }
+    if (selectedTag) {
+      const hasT1 = asset.tier1Tags.some((t) => t.label.toLowerCase() === selectedTag.toLowerCase());
+      const hasT2 = asset.tier2Tags.some((t) => t.label.toLowerCase() === selectedTag.toLowerCase());
+      if (!hasT1 && !hasT2) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === 'lighting') return (b.lightingQuality?.score ?? 0) - (a.lightingQuality?.score ?? 0);
+    if (sortBy === 'confidence') return b.aiConfidenceScore - a.aiConfidenceScore;
+    if (sortBy === 'joy') return (b.aiMoodAnalysis?.joyScore || 0) - (a.aiMoodAnalysis?.joyScore || 0);
+    return new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime();
+  });
+
+  // Videos are presented as two lighting groups rather than one flat grid.
+  const goodLightingVideos = filteredAssets.filter((a) => (a.lightingQuality?.verdict ?? 'good') === 'good');
+  const badLightingVideos = filteredAssets.filter((a) => a.lightingQuality?.verdict === 'bad');
+
+  // Counts for the filter chips — from the full bucket, not the filtered view,
+  // so the numbers don't shift as you click between them.
+  const videoGoodCount = categoryAssets.filter((a) => (a.lightingQuality?.verdict ?? 'good') === 'good').length;
+  const videoBadCount = categoryAssets.filter((a) => a.lightingQuality?.verdict === 'bad').length;
+
+  const activeAsset = selectedAsset && filteredAssets.some((a) => a.id === selectedAsset.id)
+    ? selectedAsset
+    : (filteredAssets.length > 0 ? filteredAssets[0] : null);
+
+  const getCategoryTitle = () => {
+    if (category === 'humans') return 'Humans';
+    if (category === 'videos') return 'Videos';
+    return 'Non-Human';
+  };
+
+  const getCategorySubtitle = () => {
+    if (category === 'videos') return 'Clips grouped by measured lighting quality — brightness, contrast and clipping across the whole clip';
+    if (category === 'nonhuman') return 'Objects, gear, details, landscapes and venues — everything without a person in frame';
+    return 'Automatically organized by LensFlow Vision Core v2.4';
+  };
+
+  const [exportToast, setExportToast] = useState(false);
+
+  const handleExport = (_fileName: string) => {
+    setExportToast(true);
+    setTimeout(() => setExportToast(false), 2500);
+  };
+
+  const tabButtonClass = (tab: BucketCategory) =>
+    `px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-data-mono flex items-center gap-1.5 transition-all whitespace-nowrap ${
+      category === tab
+        ? 'bg-[#6366f1] text-white font-bold shadow-md'
+        : 'text-[#94a3b8] hover:text-[#dbe2fd]'
+    }`;
+
+  const chipClass = (active: boolean) =>
+    `px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors ${
+      active
+        ? 'bg-[#6366f1]/20 text-[#c0c1ff] border border-[#6366f1]/40 font-semibold'
+        : 'bg-[#0b1326] text-[#94a3b8] hover:text-[#dbe2fd]'
+    }`;
+
+  /** One tile in the gallery grid. Videos get a duration + lighting badge. */
+  const renderTile = (asset: MediaAsset) => {
+    const isSelected = activeAsset?.id === asset.id;
+    const primaryTag = asset.tier2Tags[0]?.label || asset.tier1Tags[0]?.label || 'ASSET';
+    const isVideo = asset.mediaKind === 'video';
+    const lighting = asset.lightingQuality;
+
+    return (
+      <div
+        key={asset.id}
+        onClick={() => onSelectAsset(asset)}
+        className={`relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 group bg-[#0b1326] ${
+          isSelected
+            ? 'ring-2 ring-[#6366f1] shadow-[0_0_25px_rgba(99,102,241,0.4)]'
+            : 'border border-white/10 hover:border-[#6366f1]/40'
+        }`}
+      >
+        {isVideo ? (
+          <video
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            src={asset.thumbnailUrl}
+            muted
+            playsInline
+            preload="metadata"
+          />
+        ) : (
+          <img
+            alt={asset.fileName}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            src={asset.thumbnailUrl}
+          />
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 opacity-75 group-hover:opacity-90 transition-opacity"></div>
+
+        {/* Top Badges */}
+        <div className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-1rem)]">
+          {isVideo && lighting ? (
+            <span
+              className={`backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-data-mono border ${
+                lighting.verdict === 'good'
+                  ? 'bg-[#10b981]/80 text-white border-[#10b981]/40'
+                  : 'bg-[#f59e0b]/85 text-slate-950 font-bold border-[#f59e0b]/40'
+              }`}
+            >
+              {lighting.verdict === 'good' ? 'GOOD LIGHT' : 'BAD LIGHT'} {lighting.score}
+            </span>
+          ) : (
+            <span className="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-label-caps text-[#c0c1ff] border border-white/10 truncate max-w-[90px]">
+              #{primaryTag.toLowerCase()}
+            </span>
+          )}
+          {!isVideo && (
+            <span className="bg-[#10b981]/80 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-data-mono text-white">
+              {Math.round(asset.aiConfidenceScore * 100)}%
+            </span>
+          )}
+        </div>
+
+        {/* Play affordance for video tiles */}
+        {isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center text-white/90 border border-white/20 group-hover:scale-110 transition-transform">
+              <span className="material-symbols-outlined text-xl">play_arrow</span>
+            </div>
+          </div>
+        )}
+
+        {isSelected && (
+          <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#6366f1] flex items-center justify-center text-white shadow-lg">
+            <span className="material-symbols-outlined text-xs sm:text-sm font-bold">check</span>
+          </div>
+        )}
+
+        {/* Bottom Info */}
+        <div className="absolute bottom-2 inset-x-2 sm:bottom-2.5 sm:inset-x-2.5 flex items-center justify-between text-[11px] font-data-mono text-white/90">
+          <span className="truncate max-w-[110px] sm:max-w-[140px] font-semibold">{asset.fileName}</span>
+          <span className="text-[10px] text-[#908fa0] shrink-0">
+            {isVideo ? formatDuration(asset.durationSeconds) : asset.importedAt}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  /** A titled group of video tiles (Good Lighting / Bad Lighting). */
+  const renderVideoGroup = (
+    title: string,
+    subtitle: string,
+    icon: string,
+    accent: string,
+    groupAssets: MediaAsset[]
+  ) => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${accent}22`, color: accent }}>
+          <span className="material-symbols-outlined text-base">{icon}</span>
+        </div>
+        <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-[#dbe2fd]">{title}</h3>
+        <span
+          className="text-[10px] font-data-mono px-2 py-0.5 rounded-full border"
+          style={{ backgroundColor: `${accent}1a`, color: accent, borderColor: `${accent}44` }}
+        >
+          {groupAssets.length}
+        </span>
+        <span className="text-[11px] text-[#908fa0] font-data-mono">{subtitle}</span>
+      </div>
+
+      {groupAssets.length === 0 ? (
+        <div className="border border-dashed border-white/10 rounded-2xl py-8 text-center text-xs font-data-mono text-[#908fa0]">
+          No clips in this group.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+          {groupAssets.map(renderTile)}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 pb-20">
+      {exportToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed top-20 right-4 sm:right-8 z-50 bg-[#171f33] border border-[#10b981]/50 text-[#dbe2fd] px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-['Geist'] text-xs sm:text-sm"
+        >
+          <span className="material-symbols-outlined text-[#10b981] text-base sm:text-lg">check_circle</span>
+          <span>Asset metadata exported with XMP sidecar successfully.</span>
+        </motion.div>
+      )}
+
+      {/* Category Tabs & Header */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <h1 className="font-['Geist'] text-2xl sm:text-3xl font-bold tracking-tight text-[#dbe2fd]">
+              {getCategoryTitle()}
+            </h1>
+            <span className="bg-[#6366f1]/20 text-[#c0c1ff] border border-[#6366f1]/30 text-[11px] font-label-caps px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+              {filteredAssets.length} {category === 'videos' ? 'Clips' : 'Assets'}
+            </span>
+          </div>
+          <p className="text-[#94a3b8] text-xs mt-1 font-data-mono">
+            {getCategorySubtitle()}
+          </p>
+        </div>
+
+        {/* Category Switcher Tabs */}
+        <div className="flex items-center bg-[#171f33] p-1 rounded-xl border border-white/10 self-start sm:self-auto overflow-x-auto max-w-full">
+          <button onClick={() => onCategoryChange('humans')} className={tabButtonClass('humans')}>
+            <span className="material-symbols-outlined text-sm">face</span>
+            Humans
+          </button>
+          <button onClick={() => onCategoryChange('nonhuman')} className={tabButtonClass('nonhuman')}>
+            <span className="material-symbols-outlined text-sm">category</span>
+            Non-Human
+          </button>
+          <button onClick={() => onCategoryChange('videos')} className={tabButtonClass('videos')}>
+            <span className="material-symbols-outlined text-sm">movie</span>
+            Videos
+          </button>
+        </div>
+      </section>
+
+      {/* Sub-Filters and Quick Tags Bar */}
+      <section className="flex flex-wrap items-center justify-between gap-2.5 bg-[#171f33]/60 p-2.5 sm:p-3 rounded-2xl border border-white/10">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {category === 'humans' && (
+            <>
+              <button
+                onClick={() => { setHumanFilter('all'); setSelectedTag(null); }}
+                className={chipClass(humanFilter === 'all' && !selectedTag)}
+              >
+                All
+              </button>
+              <button onClick={() => setHumanFilter('solo')} className={chipClass(humanFilter === 'solo')}>
+                #solo
+              </button>
+              <button onClick={() => setHumanFilter('couples')} className={chipClass(humanFilter === 'couples')}>
+                #couples
+              </button>
+              <button onClick={() => setHumanFilter('groups')} className={chipClass(humanFilter === 'groups')}>
+                #groups
+              </button>
+              <button onClick={() => setHumanFilter('mood')} className={chipClass(humanFilter === 'mood')}>
+                #mood
+              </button>
+            </>
+          )}
+
+          {category === 'nonhuman' && (
+            <>
+              <button onClick={() => setSelectedTag(null)} className={chipClass(!selectedTag)}>
+                All Non-Human
+              </button>
+              <button onClick={() => setSelectedTag('indoor')} className={chipClass(selectedTag === 'indoor')}>
+                #indoor
+              </button>
+              <button onClick={() => setSelectedTag('outdoor')} className={chipClass(selectedTag === 'outdoor')}>
+                #outdoor
+              </button>
+              <button onClick={() => setSelectedTag('landscape')} className={chipClass(selectedTag === 'landscape')}>
+                #landscape
+              </button>
+              <button onClick={() => setSelectedTag('urban')} className={chipClass(selectedTag === 'urban')}>
+                #urban
+              </button>
+              <button onClick={() => setSelectedTag('studio')} className={chipClass(selectedTag === 'studio')}>
+                #studio
+              </button>
+            </>
+          )}
+
+          {category === 'videos' && (
+            <>
+              <button
+                onClick={() => { setVideoFilter('all'); setSelectedTag(null); }}
+                className={chipClass(videoFilter === 'all' && !selectedTag)}
+              >
+                All Clips ({categoryAssets.length})
+              </button>
+              <button onClick={() => setVideoFilter('good')} className={chipClass(videoFilter === 'good')}>
+                Good Lighting ({videoGoodCount})
+              </button>
+              <button onClick={() => setVideoFilter('bad')} className={chipClass(videoFilter === 'bad')}>
+                Bad Lighting ({videoBadCount})
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Sort & Filter Dropdown Trigger */}
+        <div className="relative">
+          <button
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            className="flex items-center gap-2 bg-[#0b1326] border border-white/10 hover:bg-[#222a3e] px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-data-mono text-[#dbe2fd] transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm text-[#6366f1]">tune</span>
+            <span>Sort: {sortBy.toUpperCase()}</span>
+          </button>
+
+          {showFilterMenu && (
+            <div className="absolute right-0 mt-2 w-48 bg-[#171f33] border border-white/15 rounded-xl shadow-2xl p-2 z-50">
+              <div className="text-[10px] font-label-caps text-[#908fa0] px-3 py-1 uppercase">Sort Assets By</div>
+              <button
+                onClick={() => { setSortBy('confidence'); setShowFilterMenu(false); }}
+                className={`w-full text-left px-3 py-2 text-xs font-data-mono rounded-lg transition-colors ${sortBy === 'confidence' ? 'bg-[#6366f1]/20 text-[#c0c1ff]' : 'text-[#94a3b8] hover:bg-[#0b1326]'}`}
+              >
+                AI Confidence
+              </button>
+              {category === 'videos' && (
+                <button
+                  onClick={() => { setSortBy('lighting'); setShowFilterMenu(false); }}
+                  className={`w-full text-left px-3 py-2 text-xs font-data-mono rounded-lg transition-colors ${sortBy === 'lighting' ? 'bg-[#6366f1]/20 text-[#c0c1ff]' : 'text-[#94a3b8] hover:bg-[#0b1326]'}`}
+                >
+                  Lighting Score
+                </button>
+              )}
+              <button
+                onClick={() => { setSortBy('joy'); setShowFilterMenu(false); }}
+                className={`w-full text-left px-3 py-2 text-xs font-data-mono rounded-lg transition-colors ${sortBy === 'joy' ? 'bg-[#6366f1]/20 text-[#c0c1ff]' : 'text-[#94a3b8] hover:bg-[#0b1326]'}`}
+              >
+                Joy / Emotion Score
+              </button>
+              <button
+                onClick={() => { setSortBy('newest'); setShowFilterMenu(false); }}
+                className={`w-full text-left px-3 py-2 text-xs font-data-mono rounded-lg transition-colors ${sortBy === 'newest' ? 'bg-[#6366f1]/20 text-[#c0c1ff]' : 'text-[#94a3b8] hover:bg-[#0b1326]'}`}
+              >
+                Capture Timestamp
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Main Layout: Responsive Grid Gallery + Asset Inspector Sidebar */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
+        <div className="lg:col-span-2 space-y-6">
+          {filteredAssets.length === 0 && (
+            <div className="border border-dashed border-white/10 rounded-2xl py-16 text-center space-y-2">
+              <span className="material-symbols-outlined text-3xl text-[#908fa0]">
+                {category === 'videos' ? 'movie' : 'photo_library'}
+              </span>
+              <p className="text-sm font-data-mono text-[#94a3b8]">
+                {category === 'videos' ? 'No video clips ingested yet.' : 'Nothing in this bucket yet.'}
+              </p>
+            </div>
+          )}
+
+          {/* Videos are split into lighting groups; other buckets use one flat grid. */}
+          {category === 'videos' && filteredAssets.length > 0 ? (
+            <>
+              {(videoFilter === 'all' || videoFilter === 'good') &&
+                renderVideoGroup(
+                  'Good Lighting',
+                  'Well-exposed, usable footage',
+                  'wb_sunny',
+                  '#10b981',
+                  goodLightingVideos
+                )}
+              {(videoFilter === 'all' || videoFilter === 'bad') &&
+                renderVideoGroup(
+                  'Bad Lighting',
+                  'Under/overexposed, flat, or clipping',
+                  'brightness_low',
+                  '#f59e0b',
+                  badLightingVideos
+                )}
+            </>
+          ) : (
+            filteredAssets.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                {filteredAssets.map(renderTile)}
+              </div>
+            )
+          )}
+        </div>
+
+        {/* Desktop Fixed / Sticky Inspector Sidebar & Mobile Bottom Sheet */}
+        {activeAsset && (
+          <aside className="lg:col-span-1 bg-[#171f33] rounded-2xl border border-white/10 p-4 sm:p-6 space-y-5 sm:space-y-6 shadow-2xl lg:sticky lg:top-24">
+            {/* Asset Header */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="font-['Geist'] text-base sm:text-lg font-bold text-white truncate">
+                  {activeAsset.fileName}
+                </h3>
+                <div className="flex items-center gap-2 text-xs font-data-mono text-[#908fa0] mt-0.5">
+                  <span className="truncate">Imported {activeAsset.importedAt}</span>
+                  <span>•</span>
+                  <span className="text-[#6366f1] uppercase shrink-0">
+                    {activeAsset.mimeType.split('/')[1] || activeAsset.mediaKind}
+                  </span>
+                </div>
+              </div>
+
+              <span className="bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 text-[10px] font-data-mono px-2.5 py-1 rounded-full uppercase shrink-0">
+                {Math.round(activeAsset.aiConfidenceScore * 100)}%
+              </span>
+            </div>
+
+            {/* Interactive Preview Container with Bounding Box HUD & max-height */}
+            <div className="relative aspect-[4/3] max-h-64 sm:max-h-72 rounded-xl overflow-hidden bg-[#0b1326] border border-white/10 group">
+              {activeAsset.mediaKind === 'video' ? (
+                <video
+                  className="w-full h-full object-cover"
+                  src={activeAsset.originalUrl}
+                  controls
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  alt={activeAsset.fileName}
+                  className="w-full h-full object-cover"
+                  src={activeAsset.originalUrl}
+                />
+              )}
+
+              {/* Facial Recognition Bounding Box HUD Overlay (stills only) */}
+              {activeAsset.mediaKind !== 'video' && activeAsset.aiHumanDetails?.faces?.map((face) => (
+                <div
+                  key={face.id}
+                  style={{
+                    top: `${face.box[0]}%`,
+                    left: `${face.box[1]}%`,
+                    width: `${face.box[2]}%`,
+                    height: `${face.box[3]}%`
+                  }}
+                  className="absolute border-2 border-[#10b981] rounded-md pointer-events-none shadow-[0_0_12px_rgba(16,185,129,0.5)] transition-all"
+                >
+                  <span className="absolute -top-5 left-0 bg-[#10b981] text-slate-950 font-data-mono text-[9px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
+                    {face.label}
+                  </span>
+                </div>
+              ))}
+
+              {activeAsset.mediaKind === 'video' && activeAsset.durationSeconds ? (
+                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-data-mono text-white/80 pointer-events-none">
+                  {formatDuration(activeAsset.durationSeconds)}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Lighting Analysis — the signal the Videos bucket sorts on */}
+            {activeAsset.lightingQuality && (
+              <div className="space-y-3 bg-[#0b1326]/60 p-3.5 sm:p-4 rounded-xl border border-white/5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-label-caps text-[#908fa0] uppercase tracking-wider">
+                    Lighting Analysis
+                  </span>
+                  <span
+                    className={`text-[10px] font-data-mono px-2 py-0.5 rounded-full border uppercase ${
+                      activeAsset.lightingQuality.verdict === 'good'
+                        ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30'
+                        : 'bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/30'
+                    }`}
+                  >
+                    {activeAsset.lightingQuality.verdict === 'good' ? 'Good Lighting' : 'Bad Lighting'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-data-mono mb-1">
+                    <span className="text-[#dbe2fd]">Lighting Score</span>
+                    <span className={activeAsset.lightingQuality.verdict === 'good' ? 'text-[#10b981]' : 'text-[#f59e0b]'}>
+                      {activeAsset.lightingQuality.score}/100
+                    </span>
+                  </div>
+                  <div className="w-full bg-[#171f33] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${activeAsset.lightingQuality.score}%`,
+                        background: activeAsset.lightingQuality.verdict === 'good'
+                          ? 'linear-gradient(to right, #6366f1, #10b981)'
+                          : 'linear-gradient(to right, #f59e0b, #ef4444)'
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs font-data-mono pt-2 border-t border-white/5">
+                  <div>
+                    <span className="text-[#908fa0] text-[10px] block">Brightness</span>
+                    <span className="text-[#dbe2fd] font-medium">{activeAsset.lightingQuality.brightness} / 255</span>
+                  </div>
+                  <div>
+                    <span className="text-[#908fa0] text-[10px] block">Contrast</span>
+                    <span className="text-[#dbe2fd] font-medium">{activeAsset.lightingQuality.contrast}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#908fa0] text-[10px] block">Shadow Clip</span>
+                    <span className="text-[#dbe2fd] font-medium">
+                      {Math.round(activeAsset.lightingQuality.shadowClipping * 100)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#908fa0] text-[10px] block">Highlight Clip</span>
+                    <span className="text-[#dbe2fd] font-medium">
+                      {Math.round(activeAsset.lightingQuality.highlightClipping * 100)}%
+                    </span>
+                  </div>
+                  {activeAsset.mediaKind === 'video' && (
+                    <>
+                      <div>
+                        <span className="text-[#908fa0] text-[10px] block">Exposure Drift</span>
+                        <span className="text-[#dbe2fd] font-medium">{activeAsset.lightingQuality.exposureVariance}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#908fa0] text-[10px] block">Frames Sampled</span>
+                        <span className="text-[#dbe2fd] font-medium">{activeAsset.lightingQuality.framesSampled}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-white/5 flex flex-wrap gap-1.5">
+                  {activeAsset.lightingQuality.reasons.map((reason) => (
+                    <span
+                      key={reason}
+                      className="text-[10px] font-data-mono px-2 py-0.5 rounded-full bg-[#171f33] border border-white/10 text-[#94a3b8]"
+                    >
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Synthesis Section */}
+            <div className="space-y-3 bg-[#0b1326]/60 p-3.5 sm:p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-label-caps text-[#908fa0] uppercase tracking-wider">
+                  AI Synthesis
+                </span>
+                <span className="text-[10px] font-data-mono text-[#6366f1]">Vision v2.4</span>
+              </div>
+
+              {activeAsset.aiMoodAnalysis && (
+                <div>
+                  <div className="flex justify-between text-xs font-data-mono mb-1">
+                    <span className="text-[#dbe2fd]">Mood: {activeAsset.aiMoodAnalysis.primaryMood.toUpperCase()}</span>
+                    <span className="text-[#10b981]">{activeAsset.aiMoodAnalysis.joyScore}% Joy</span>
+                  </div>
+                  <div className="w-full bg-[#171f33] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-[#6366f1] to-[#10b981] h-full rounded-full"
+                      style={{ width: `${activeAsset.aiMoodAnalysis.joyScore}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-data-mono pt-2 border-t border-white/5">
+                <div>
+                  <span className="text-[#908fa0] text-[10px] block">Subjects</span>
+                  <span className="text-[#dbe2fd] font-medium truncate block">
+                    {activeAsset.aiHumanDetails?.peopleCount
+                      ? `${activeAsset.aiHumanDetails.peopleCount} (${activeAsset.aiHumanDetails.groupType})`
+                      : 'Non-Human'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#908fa0] text-[10px] block">Media</span>
+                  <span className="text-[#dbe2fd] font-medium capitalize truncate block">
+                    {activeAsset.mediaKind === 'video'
+                      ? `Video • ${formatDuration(activeAsset.durationSeconds)}`
+                      : 'Still Image'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#908fa0] text-[10px] block">Scene</span>
+                  <span className="text-[#dbe2fd] font-medium capitalize truncate block">
+                    {activeAsset.aiObjectDetails?.environment
+                      || activeAsset.aiHumanDetails?.shotType?.replace('_', ' ')
+                      || 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#908fa0] text-[10px] block">Smart Bucket</span>
+                  <span className="text-[#6366f1] font-medium truncate block">
+                    {activeAsset.autoOrganizedBucket}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Project & File Readout */}
+            <div className="space-y-2 bg-[#0b1326]/60 p-3.5 sm:p-4 rounded-xl border border-white/5 text-xs font-data-mono">
+              <div className="text-[10px] font-label-caps text-[#908fa0] uppercase tracking-wider mb-1.5">
+                File Metadata
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-[#908fa0]">Project:</span>
+                <span className="text-[#dbe2fd] truncate ml-2">{activeAsset.projectName || '—'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-[#908fa0]">Size:</span>
+                <span className="text-[#dbe2fd] truncate ml-2">
+                  {activeAsset.fileSizeBytes > 0
+                    ? `${(activeAsset.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                    : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-[#908fa0]">Aspect:</span>
+                <span className="text-[#dbe2fd] capitalize">{activeAsset.aspectRatio}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-[#908fa0]">Route:</span>
+                <span className="text-[#dbe2fd]">{activeAsset.routeStatus.replace('_', ' ')}</span>
+              </div>
+            </div>
+
+            {/* Actions Bar */}
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={() => onEditTags(activeAsset)}
+                className="flex-1 py-2.5 bg-[#6366f1] hover:bg-[#5254db] text-white rounded-xl text-xs font-data-mono font-bold transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-base">edit_note</span>
+                Edit Details
+              </button>
+              <button
+                onClick={() => handleExport(activeAsset.fileName)}
+                className="p-2.5 bg-[#0b1326] border border-white/10 hover:bg-[#222a3e] text-[#dbe2fd] rounded-xl transition-colors"
+                title="Export Asset"
+              >
+                <span className="material-symbols-outlined text-base">ios_share</span>
+              </button>
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+};

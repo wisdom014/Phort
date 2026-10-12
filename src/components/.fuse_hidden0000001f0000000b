@@ -1,0 +1,579 @@
+import React, { useState } from 'react';
+import { Project, MediaAsset, LiveIngestionEvent, BucketCategory, NavigationTab } from '../types';
+import { motion } from 'motion/react';
+
+interface WorkspaceViewProps {
+  projects: Project[];
+  assets: MediaAsset[];
+  liveEvents: LiveIngestionEvent[];
+  onSelectProject: (projectId: string) => void;
+  onNavigateTab: (tab: NavigationTab) => void;
+  onSelectBucket: (category: BucketCategory) => void;
+  onOpenUpload: () => void;
+  onOpenNewProject: () => void;
+}
+
+export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
+  projects,
+  assets,
+  liveEvents,
+  onSelectProject,
+  onNavigateTab,
+  onSelectBucket,
+  onOpenUpload,
+  onOpenNewProject
+}) => {
+  const [isSyncingLR, setIsSyncingLR] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const handleSyncLightroom = () => {
+    setIsSyncingLR(true);
+    setSyncMessage('Connecting to Adobe Lightroom Classic...');
+    setTimeout(() => {
+      setSyncMessage('Lightroom catalog synced successfully (14,285 assets verified)');
+      setTimeout(() => {
+        setIsSyncingLR(false);
+        setSyncMessage(null);
+      }, 2500);
+    }, 1800);
+  };
+
+  // Stills only in the subject buckets — clips are counted in the Videos bucket.
+  const stills = assets.filter((a) => a.mediaKind !== 'video');
+  const videos = assets.filter((a) => a.mediaKind === 'video');
+
+  const humanAssetsCount = stills.filter((a) => a.primaryCategory === 'human').length;
+  const nonHumanAssetsCount = stills.filter((a) => a.primaryCategory === 'nonhuman').length;
+  const videoCount = videos.length;
+  const goodLightingCount = videos.filter((a) => (a.lightingQuality?.verdict ?? 'good') === 'good').length;
+  const badLightingCount = videos.filter((a) => a.lightingQuality?.verdict === 'bad').length;
+
+  return (
+    <div className="space-y-8 pb-12">
+      {/* Toast Notification for Lightroom Sync */}
+      {syncMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed top-24 right-8 z-50 bg-[#171f33] border border-[#6366f1]/50 text-[#dbe2fd] px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-['Geist']"
+        >
+          <span className="material-symbols-outlined text-[#6366f1] animate-spin">
+            {isSyncingLR ? 'sync' : 'check_circle'}
+          </span>
+          <span className="text-sm font-medium">{syncMessage}</span>
+        </motion.div>
+      )}
+
+      {/* Header Section */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-['Geist'] text-2xl sm:text-3xl font-bold tracking-tight text-[#dbe2fd]">
+            Smart Workspace
+          </h1>
+          <p className="text-[#94a3b8] text-xs sm:text-sm mt-1">
+            Overview of your active shoots, ingestion pipelines, and automated asset categorization.
+          </p>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <button
+            onClick={handleSyncLightroom}
+            disabled={isSyncingLR}
+            className="flex items-center gap-2 bg-[#171f33] border border-white/10 hover:bg-[#222a3e] px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs font-data-mono text-[#dbe2fd] transition-colors"
+          >
+            <span className={`material-symbols-outlined text-base text-[#6366f1] ${isSyncingLR ? 'animate-spin' : ''}`}>
+              sync
+            </span>
+            <span>{isSyncingLR ? 'Syncing...' : 'Sync Lightroom'}</span>
+          </button>
+
+          <button
+            onClick={onOpenNewProject}
+            className="flex items-center gap-2 bg-[#171f33] border border-white/10 hover:bg-[#222a3e] px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs font-data-mono text-[#dbe2fd] transition-colors"
+          >
+            <span className="material-symbols-outlined text-base text-[#6366f1]">add_circle</span>
+            <span>New Shoot</span>
+          </button>
+
+          <button
+            onClick={onOpenUpload}
+            className="flex items-center gap-2 bg-[#6366f1] hover:bg-[#5254db] px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl text-xs font-data-mono font-bold text-white transition-all shadow-[0_0_20px_rgba(99,102,241,0.35)]"
+          >
+            <span className="material-symbols-outlined text-base">cloud_upload</span>
+            <span>Upload Media</span>
+          </button>
+        </div>
+      </section>
+
+      {/* Hero Stats & Status Grid */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        {/* Main Hero Active Pipeline Card */}
+        <div className="sm:col-span-2 lg:col-span-2 bg-[#171f33] rounded-2xl p-5 sm:p-6 border border-white/10 relative overflow-hidden flex flex-col justify-between shadow-[0_4px_24px_rgba(0,0,0,0.3)] group">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-[#6366f1] to-[#22d3ee]"></div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] font-label-caps text-[#6366f1] tracking-widest uppercase flex items-center gap-1.5 bg-[#6366f1]/10 px-2.5 py-1 rounded-full border border-[#6366f1]/20">
+                <span className="w-2 h-2 rounded-full bg-[#6366f1] animate-pulse"></span>
+                Processing: Sarah &amp; John's Wedding
+              </span>
+              <span className="font-data-mono text-xs text-[#908fa0]">Batch 04/12</span>
+            </div>
+
+            <h3 className="font-['Geist'] text-lg sm:text-xl font-bold text-white mt-3 sm:mt-4">
+              Automated AI Tagging &amp; Face Clustering
+            </h3>
+
+            {/* Live steps console */}
+            <div className="mt-3 space-y-1.5 font-data-mono text-xs text-[#94a3b8] bg-[#0b1326]/60 p-3 rounded-xl border border-white/5 overflow-hidden">
+              <div className="flex items-center gap-2 text-[#10b981] truncate">
+                <span className="text-[10px] shrink-0">✓</span>
+                <span className="truncate">Parsing EXIF &amp; Lens Profile... OK</span>
+              </div>
+              <div className="flex items-center gap-2 text-[#22d3ee] truncate">
+                <span className="animate-spin text-[10px] shrink-0">◓</span>
+                <span className="truncate">Running facial recognition &amp; joy analysis... [ACTIVE]</span>
+              </div>
+              <div className="flex items-center gap-2 text-[#908fa0] truncate">
+                <span className="text-[10px] shrink-0">○</span>
+                <span className="truncate">Auto-clustering into Smart Buckets... [QUEUED]</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2">
+            <div className="flex justify-between text-xs font-data-mono">
+              <span className="text-[#908fa0]">84% Complete</span>
+              <span className="text-[#6366f1]">Est. 2m remaining</span>
+            </div>
+            <div className="w-full bg-[#0b1326] h-2 rounded-full overflow-hidden p-0.5">
+              <div
+                className="bg-gradient-to-r from-[#6366f1] to-[#22d3ee] h-full rounded-full transition-all duration-500 animate-progress-shimmer"
+                style={{ width: '84%' }}
+              ></div>
+            </div>
+            <div className="flex items-center justify-between pt-1.5">
+              <button
+                onClick={() => onNavigateTab('ingestion')}
+                className="text-xs font-data-mono text-[#c0c1ff] hover:underline flex items-center gap-1"
+              >
+                View Pipeline Details →
+              </button>
+              <span className="text-[11px] text-[#908fa0]">45 FPS Live Compute</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Assets Metric */}
+        <div className="bg-[#171f33] rounded-2xl p-5 sm:p-6 border border-white/10 flex flex-col justify-between shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+          <div className="flex justify-between items-start">
+            <span className="text-xs font-label-caps text-[#908fa0] uppercase tracking-wider">Total Assets</span>
+            <div className="p-2 bg-[#6366f1]/10 rounded-xl text-[#6366f1]">
+              <span className="material-symbols-outlined text-lg">perm_media</span>
+            </div>
+          </div>
+          <div>
+            <div className="font-['Geist'] text-2xl sm:text-3xl font-bold text-white tracking-tight">14,285</div>
+            <div className="flex items-center gap-1.5 mt-2 text-xs font-data-mono text-[#10b981]">
+              <span className="material-symbols-outlined text-sm">trending_up</span>
+              <span>+1,204 this week</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Humans Detected Metric */}
+        <div className="bg-[#171f33] rounded-2xl p-5 sm:p-6 border border-white/10 flex flex-col justify-between shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+          <div className="flex justify-between items-start">
+            <span className="text-xs font-label-caps text-[#908fa0] uppercase tracking-wider">Humans Detected</span>
+            <div className="p-2 bg-[#22d3ee]/10 rounded-xl text-[#22d3ee]">
+              <span className="material-symbols-outlined text-lg">face</span>
+            </div>
+          </div>
+          <div>
+            <div className="font-['Geist'] text-2xl sm:text-3xl font-bold text-white tracking-tight">8,942</div>
+            <div className="text-xs font-data-mono text-[#94a3b8] mt-2">
+              Across 145 unique subjects
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Recent Projects Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-['Geist'] text-lg sm:text-xl font-bold text-[#dbe2fd]">Recent Projects</h2>
+            <p className="text-xs text-[#908fa0]">Active shoots synced with Adobe Lightroom and AI Indexer</p>
+          </div>
+          <button
+            onClick={() => onNavigateTab('library')}
+            className="text-xs font-data-mono text-[#6366f1] hover:underline"
+          >
+            View All ({projects.length})
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {projects.map((project) => (
+            <div
+              key={project.id}
+              onClick={() => onSelectProject(project.id)}
+              className="bg-[#171f33] rounded-2xl overflow-hidden border border-white/10 hover:border-[#6366f1]/50 transition-all duration-300 group cursor-pointer shadow-lg hover:shadow-[0_8px_30px_rgba(99,102,241,0.15)] flex flex-col"
+            >
+              {/* Cover Image Container with height constraint */}
+              <div className="relative aspect-[16/10] max-h-48 overflow-hidden bg-[#0b1326]">
+                <img
+                  alt={project.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src={project.coverUrl}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#171f33] via-transparent to-black/30"></div>
+
+                {/* Status Badge */}
+                <div className="absolute top-3 left-3">
+                  {project.status === 'processing' && (
+                    <span className="bg-[#6366f1]/90 backdrop-blur-md text-white text-[10px] font-label-caps px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-md">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                      Processing AI
+                    </span>
+                  )}
+                  {project.status === 'indexed' && (
+                    <span className="bg-[#10b981]/90 backdrop-blur-md text-white text-[10px] font-label-caps px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-md">
+                      ✓ AI Indexed
+                    </span>
+                  )}
+                  {project.status === 'synced' && (
+                    <span className="bg-[#22d3ee]/90 backdrop-blur-md text-slate-900 text-[10px] font-label-caps font-bold px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-md">
+                      LR Synced
+                    </span>
+                  )}
+                </div>
+
+                {/* Photo & Video Counts */}
+                <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-data-mono text-[#dbe2fd] flex items-center gap-2">
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[13px]">image</span> {project.assetCount}
+                  </span>
+                  {project.videoCount > 0 && (
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px]">videocam</span> {project.videoCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Project Info */}
+              <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                <div>
+                  <h3 className="font-['Geist'] text-sm sm:text-base font-semibold text-white group-hover:text-[#6366f1] transition-colors line-clamp-1">
+                    {project.title}
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-[#908fa0] mt-1">
+                    <span className="truncate">{project.location}</span>
+                    <span>•</span>
+                    <span className="font-data-mono shrink-0">{project.date}</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[11px] font-data-mono text-[#94a3b8] truncate">
+                    {project.client || 'Client Shoot'}
+                  </span>
+                  <span className="material-symbols-outlined text-sm text-[#908fa0] group-hover:translate-x-1 transition-transform group-hover:text-[#6366f1] shrink-0">
+                    arrow_forward
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Editorial Smart Buckets Showcase */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-['Geist'] text-lg sm:text-xl font-bold text-[#dbe2fd]">Smart Buckets</h2>
+            <p className="text-xs text-[#908fa0]">AI-categorized asset collections filtered in real time</p>
+          </div>
+          <span className="text-xs font-data-mono text-[#10b981] flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>
+            Auto-Sync Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Humans Bucket */}
+          <div
+            onClick={() => {
+              onSelectBucket('humans');
+              onNavigateTab('buckets');
+            }}
+            className="bg-[#171f33] rounded-2xl p-4 sm:p-5 border border-white/10 hover:border-[#6366f1]/60 transition-all cursor-pointer group shadow-lg flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#6366f1]/20 flex items-center justify-center text-[#6366f1]">
+                    <span className="material-symbols-outlined text-lg">face</span>
+                  </div>
+                  <div>
+                    <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-white group-hover:text-[#6366f1] transition-colors">
+                      Humans
+                    </h3>
+                    <p className="text-[11px] font-data-mono text-[#908fa0]">{humanAssetsCount} Photos</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-[#908fa0] group-hover:translate-x-1 transition-transform">
+                  arrow_forward
+                </span>
+              </div>
+
+              {/* 3-Photo Montage with max height */}
+              <div className="grid grid-cols-3 gap-1.5 aspect-[16/9] max-h-40 rounded-xl overflow-hidden bg-[#0b1326]">
+                <div className="col-span-2 h-full">
+                  <img
+                    alt="Humans feature"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCKKlzRXodi-0G3_KTx-eEjXp_1EMUPRGMsAkrLtSk_scPwYBtfzMN92yIvUHC40hZOnyxykZ4J4CAEnNbwqUej4H-1tKma3osKWmCTVrsh_cHH0uRuWzkbYGgsfhj_J0dKzYhmqFDZJ4WEGz7YjcEV2RWht2opt5-mDuxiMVImRH_pQ7YKwarYX_M1T9L2WFp6cwyOixcGayvjP9oWJRU_pezfY_ezYJw_0JbTh_pXLOuSgCuCqKN"
+                  />
+                </div>
+                <div className="grid grid-rows-2 gap-1.5 h-full">
+                  <img
+                    alt="Human portrait"
+                    className="w-full h-full object-cover"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKgGel3Y7VOHSqZlTsSjr5Tqe0Jdbndv-PfWCbnRgoP5hRZyPsfKkMXlfmsrSVsE3AmbeP0gHCtpWORb_gT7Zy75JjLYkxqImVroLjJQiLfj5-yvZD16VYUTXECXgwQHqI7vRpRnq62Z55DjXJx2_Af1ALhyvcYvBA_VcQ377E5B4-8Wi_ecG2phCthLWns4b38gZEUMTHG1HUsTZAQf5NDU1n25DxpwEOGP1IQ3Qhbp1JnFaS-gBC"
+                  />
+                  <img
+                    alt="Human candid"
+                    className="w-full h-full object-cover"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCX_LHHjpKGa_qWzQ8edhNatF9wS6AN5flV3Tk_KDhLIQnh-E4chBgYhWAsip1oxjyC9dzOG3K3KoKIXzD_Yh_YkXO7-8et03ATjX-GBgOUTyUP63PAlN-yTtjTZun08Uod9u7rBm0OtZSNipcjzzLRyCS-cfpQZK2_ev5zpxe8cnZvkJTOcpM3TjFXLhJ6OCHZLXPgvJhyy_G6Ia81pqydv41XnMBSKBl_ODxXHIQ_9ftkYozP2s1O"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-[10px] sm:text-[11px] font-data-mono text-[#94a3b8] pt-2.5 border-t border-white/5">
+              <span>Solo: 4,210</span>
+              <span>Couples: 2,840</span>
+              <span>Groups: 1,892</span>
+            </div>
+          </div>
+
+          {/* Non-Human Bucket — absorbed the old Objects and Environment buckets */}
+          <div
+            onClick={() => {
+              onSelectBucket('nonhuman');
+              onNavigateTab('buckets');
+            }}
+            className="bg-[#171f33] rounded-2xl p-4 sm:p-5 border border-white/10 hover:border-[#6366f1]/60 transition-all cursor-pointer group shadow-lg flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#22d3ee]/20 flex items-center justify-center text-[#22d3ee]">
+                    <span className="material-symbols-outlined text-lg">category</span>
+                  </div>
+                  <div>
+                    <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-white group-hover:text-[#22d3ee] transition-colors">
+                      Non-Human
+                    </h3>
+                    <p className="text-[11px] font-data-mono text-[#908fa0]">{nonHumanAssetsCount} Photos</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-[#908fa0] group-hover:translate-x-1 transition-transform">
+                  arrow_forward
+                </span>
+              </div>
+
+              {/* 3-Photo Montage — objects, details and environment now share one bucket */}
+              <div className="grid grid-cols-3 gap-1.5 aspect-[16/9] max-h-40 rounded-xl overflow-hidden bg-[#0b1326]">
+                <img
+                  alt="Detail rings"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwsUlQr5FkfcJykBBWRlajRCar8dRnIAsLy0cZMhHnH9IBqgysoa65O7792P0cYIQOTHQt5JsLTiyZAneD7Z_GHMgG3wLCkqJ0ofnxqidOSdE_7Bume1fAYWiIHc8varJSJEZQUwVnCKVNUaIujMtwJqQhcM5KM1TUiljS2HRXT9-B2GDF3lm_N62lzG013_lSNkVMjsijG3_ce4voMPHdgFc2XV4gTVXGyQY6t8VSAlFiK-grkEnB"
+                />
+                <img
+                  alt="Detail florals"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfT-xDfRQShp2Sh2w-5qs3wNmM7iksBCggSGjZJhbl60IrkNsW3QHzVgj-26R89qvD0hi6SkfaGhuYL3hlMLe89pIORsflyKbzSe6yr5Nn5DBVT1jcKkssAGDPw_MGN3XkoWG4zdLECMwkQNIEtIMe88TRg4ynND0Kokt4zBp4Ae9XPzsMkYJLTFhevA9-YzXv6ehYjAxItzvS1nyduY4RxZwFngMLF7M8TV63ZnLrn6zGQWoQGWv6"
+                />
+                <img
+                  alt="Environment landscape"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuCOG4O6zqS65fpsFo-dNbKYfbtQZGPaGtTNOda-rLGpz0yKAp8Cz73o_zTEdIiGbPklqSgT2DEjsPqPcYGHfWKG3FUUMKr4TYdOVaB06mfNp2WBr6I42_-vhOTpfjD13y6CHCdC8DA0C0tXeKD0LUzphZuPuNe7Wa3PaGA-HZY5atasSfGBmnFQWrBLmVbeOEZ2gAOboWvZ8lET2KDRUir7mUP1N0v7dV-BmzTTbwmHMEuOKKZj9dh"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-[10px] sm:text-[11px] font-data-mono text-[#94a3b8] pt-2.5 border-t border-white/5">
+              <span>Objects &amp; Gear</span>
+              <span>Details</span>
+              <span>Landscapes</span>
+            </div>
+          </div>
+
+          {/* Videos Bucket — grouped by measured lighting quality */}
+          <div
+            onClick={() => {
+              onSelectBucket('videos');
+              onNavigateTab('buckets');
+            }}
+            className="bg-[#171f33] rounded-2xl p-4 sm:p-5 border border-white/10 hover:border-[#6366f1]/60 transition-all cursor-pointer group shadow-lg flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#10b981]/20 flex items-center justify-center text-[#10b981]">
+                    <span className="material-symbols-outlined text-lg">movie</span>
+                  </div>
+                  <div>
+                    <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-white group-hover:text-[#10b981] transition-colors">
+                      Videos
+                    </h3>
+                    <p className="text-[11px] font-data-mono text-[#908fa0]">{videoCount} Clips</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-[#908fa0] group-hover:translate-x-1 transition-transform">
+                  arrow_forward
+                </span>
+              </div>
+
+              {/* Lighting split readout instead of a montage — this bucket sorts on exposure */}
+              <div className="aspect-[16/9] max-h-40 rounded-xl bg-[#0b1326] border border-white/5 p-3 sm:p-4 flex flex-col justify-center gap-3">
+                <div>
+                  <div className="flex justify-between text-[11px] font-data-mono mb-1">
+                    <span className="text-[#10b981] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[13px]">wb_sunny</span>
+                      Good Lighting
+                    </span>
+                    <span className="text-[#dbe2fd]">{goodLightingCount}</span>
+                  </div>
+                  <div className="w-full bg-[#171f33] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#10b981] h-full rounded-full transition-all"
+                      style={{ width: `${videoCount > 0 ? (goodLightingCount / videoCount) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] font-data-mono mb-1">
+                    <span className="text-[#f59e0b] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[13px]">brightness_low</span>
+                      Bad Lighting
+                    </span>
+                    <span className="text-[#dbe2fd]">{badLightingCount}</span>
+                  </div>
+                  <div className="w-full bg-[#171f33] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-[#f59e0b] h-full rounded-full transition-all"
+                      style={{ width: `${videoCount > 0 ? (badLightingCount / videoCount) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-[10px] sm:text-[11px] font-data-mono text-[#94a3b8] pt-2.5 border-t border-white/5">
+              <span>Exposure</span>
+              <span>Contrast</span>
+              <span>Clipping</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Live Ingestion Feed & System Status */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* Live Ingestion Feed */}
+        <div className="lg:col-span-2 bg-[#171f33] rounded-2xl p-5 sm:p-6 border border-white/10 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10b981] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#10b981]"></span>
+              </span>
+              <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-white">Live Ingestion Activity</h3>
+            </div>
+            <button
+              onClick={() => onNavigateTab('ingestion')}
+              className="text-xs font-data-mono text-[#6366f1] hover:underline"
+            >
+              Open Stream →
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {liveEvents.slice(0, 4).map((ev) => (
+              <div
+                key={ev.id}
+                className="bg-[#0b1326]/60 p-3 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3 text-xs font-data-mono hover:bg-[#0b1326] transition-colors"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-[#908fa0] text-[10px] sm:text-[11px] shrink-0">{ev.timestamp}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {ev.type === 'subject' && <span className="w-1.5 h-1.5 rounded-full bg-[#6366f1] shrink-0"></span>}
+                    {ev.type === 'object' && <span className="w-1.5 h-1.5 rounded-full bg-[#22d3ee] shrink-0"></span>}
+                    {ev.type === 'warning' && <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b] shrink-0"></span>}
+                    {ev.type === 'batch' && <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] shrink-0"></span>}
+                    <span className="text-[#dbe2fd] font-medium truncate">{ev.message}</span>
+                  </div>
+                </div>
+                <div className="text-left sm:text-right shrink-0">
+                  <span className="text-[#94a3b8] text-[11px]">{ev.target}</span>
+                  {ev.subtext && <span className="text-[#908fa0] text-[10px] ml-1.5">({ev.subtext})</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* System Status Metrics */}
+        <div className="bg-[#171f33] rounded-2xl p-5 sm:p-6 border border-white/10 shadow-lg flex flex-col justify-between">
+          <div>
+            <h3 className="font-['Geist'] text-sm sm:text-base font-bold text-white mb-4">System Telemetry</h3>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-xs font-data-mono mb-1.5">
+                  <span className="text-[#908fa0]">Storage Volume</span>
+                  <span className="text-[#dbe2fd]">3.12 TB / 4.00 TB (78%)</span>
+                </div>
+                <div className="w-full bg-[#0b1326] h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-[#6366f1] h-full rounded-full" style={{ width: '78%' }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-data-mono mb-1.5">
+                  <span className="text-[#908fa0]">AI Compute Node</span>
+                  <span className="text-[#10b981]">Healthy (45 FPS)</span>
+                </div>
+                <div className="w-full bg-[#0b1326] h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-[#10b981] h-full rounded-full" style={{ width: '92%' }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-xs font-data-mono mb-1.5">
+                  <span className="text-[#908fa0]">Lightroom Bridge</span>
+                  <span className="text-[#22d3ee]">Active &amp; Connected</span>
+                </div>
+                <div className="w-full bg-[#0b1326] h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-[#22d3ee] h-full rounded-full" style={{ width: '100%' }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-white/5 flex items-center justify-between text-[10px] font-data-mono text-[#908fa0] mt-4">
+            <span>LensFlow Core v2.4</span>
+            <span>Vision Engine: ON</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};

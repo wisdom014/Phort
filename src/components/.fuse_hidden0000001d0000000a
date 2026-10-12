@@ -1,0 +1,185 @@
+import React, { useState, useRef } from 'react';
+import { MediaAsset } from '../types';
+import { motion } from 'motion/react';
+import { ingestFiles, IngestProgress } from '../lib/ingestionService';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
+import { useAuth } from '../lib/AuthContext';
+
+interface UploadModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onUploadSuccess: (newAssets: MediaAsset[]) => void;
+  targetProjectId: string;
+  targetProjectName: string;
+}
+
+export const UploadModal: React.FC<UploadModalProps> = ({
+  isOpen,
+  onClose,
+  onUploadSuccess,
+  targetProjectId,
+  targetProjectName
+}) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentStatus, setCurrentStatus] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
+
+  if (!isOpen) return null;
+
+  const stageLabel: Record<IngestProgress['stage'], string> = {
+    uploading: 'Uploading to secure storage...',
+    analyzing: 'Running local AI Vision Core (human.js + YOLO ONNX) — mood, people & object detection...',
+    saving: 'Auto-routing into Smart Buckets...',
+    done: 'Ingestion complete!',
+    error: 'Ingestion error'
+  };
+
+  const runIngestion = async (files: File[]) => {
+    setIsProcessing(true);
+    setErrorMsg(null);
+    setProgress(5);
+    setCurrentStatus(`Preparing ${files.length} file${files.length > 1 ? 's' : ''}...`);
+
+    try {
+      const newAssets = await ingestFiles(
+        files,
+        { projectId: targetProjectId, projectName: targetProjectName, userId: user?.id },
+        (p) => {
+          setCurrentStatus(`${stageLabel[p.stage]} (${p.fileName})`);
+          setProgress((prev) => Math.min(95, prev + 90 / (files.length * 3)));
+        }
+      );
+
+      setProgress(100);
+      setCurrentStatus('Ingestion complete!');
+      setTimeout(() => {
+        onUploadSuccess(newAssets);
+        setIsProcessing(false);
+        setProgress(0);
+        onClose();
+      }, 500);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong during ingestion.');
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      runIngestion(Array.from(e.target.files));
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      runIngestion(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-[#171f33] border border-white/15 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-6"
+      >
+        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-[#6366f1]/20 rounded-xl text-[#6366f1]">
+              <span className="material-symbols-outlined text-xl">cloud_upload</span>
+            </div>
+            <div>
+              <h3 className="font-['Geist'] text-lg font-bold text-white">Ingest Media</h3>
+              <p className="text-xs text-[#908fa0] font-data-mono">LensFlow Local AI Classifier</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-[#908fa0] hover:text-white p-1 rounded-lg"
+          >
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        {!isSupabaseConfigured && (
+          <div className="text-[11px] font-data-mono text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+            Supabase env vars aren't set — running in local-only mode. Uploads won't persist across sessions.
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="text-[11px] font-data-mono text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+            {errorMsg}
+          </div>
+        )}
+
+        {isProcessing ? (
+          <div className="py-8 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center mx-auto text-[#6366f1] animate-spin">
+              <span className="material-symbols-outlined text-2xl">sync</span>
+            </div>
+            <div>
+              <h4 className="font-['Geist'] text-sm sm:text-base font-bold text-white px-2 break-words">{currentStatus}</h4>
+              <p className="text-xs text-[#908fa0] font-data-mono mt-1">
+                Batch Analysis ({Math.round(progress)}% Complete)
+              </p>
+            </div>
+            <div className="w-full bg-[#0b1326] h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-[#6366f1] to-[#22d3ee] h-full rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          </div>
+        ) : (
+          <div
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all duration-200 ${
+              isDragging
+                ? 'border-[#6366f1] bg-[#6366f1]/10 scale-102'
+                : 'border-white/15 bg-[#0b1326]/60 hover:border-[#6366f1]/50 hover:bg-[#0b1326]'
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,video/mp4,video/webm,video/quicktime,.cr2,.cr3,.raf,.arw,.nef,.dng,.raw"
+              className="hidden"
+              onChange={handleFiles}
+            />
+            <div className="w-12 h-12 rounded-full bg-[#6366f1]/10 text-[#6366f1] flex items-center justify-center mx-auto mb-3">
+              <span className="material-symbols-outlined text-2xl">add_photo_alternate</span>
+            </div>
+            <h4 className="font-['Geist'] text-sm font-semibold text-white">
+              Drag &amp; drop photos, videos, or RAW files here
+            </h4>
+            <p className="text-xs text-[#908fa0] font-data-mono mt-1">
+              JPG/PNG/WebP and MP4/WebM/MOV get full live detection (one representative frame is
+              analyzed for video). Canon CR3/CR2, Sony ARW, Fuji RAF, Nikon NEF, and DNG upload fine
+              but skip live analysis and use the fallback classifier — browsers can't decode RAW.
+            </p>
+            <button className="mt-4 px-4 py-2 bg-[#171f33] border border-white/10 rounded-xl text-xs font-data-mono text-[#dbe2fd] hover:bg-[#222a3e] transition-colors">
+              Browse Local Drives
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[11px] font-data-mono text-[#908fa0] pt-2">
+          <span className="truncate">Target Project: {targetProjectName}</span>
+          <span>AI Vision: Local (human.js + YOLO ONNX) — no API key, runs in-browser</span>
+        </div>
+      </motion.div>
+    </div>
+  );
+};

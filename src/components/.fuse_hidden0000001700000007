@@ -1,0 +1,405 @@
+import React, { useState } from 'react';
+import { NavigationTab, BucketCategory } from '../types';
+import { LOGO_URL, USER_AVATAR } from '../data/seedData';
+import { X, LogOut } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
+
+interface NavigationProps {
+  currentTab: NavigationTab;
+  onTabChange: (tab: NavigationTab) => void;
+  currentBucketCategory: BucketCategory;
+  onBucketCategoryChange: (category: BucketCategory) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  onOpenUpload: () => void;
+  onOpenNewProject: () => void;
+}
+
+export const Navigation: React.FC<NavigationProps> = ({
+  currentTab,
+  onTabChange,
+  currentBucketCategory,
+  onBucketCategoryChange,
+  searchQuery,
+  onSearchChange,
+  onOpenUpload,
+  onOpenNewProject
+}) => {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const { user, signOut } = useAuth();
+  const displayName = user?.user_metadata?.full_name || user?.email || 'Pro Photographer';
+  const avatarUrl = user?.user_metadata?.avatar_url || USER_AVATAR;
+
+  const notifications = [
+    { id: 1, title: 'AI Batch Complete', desc: 'Sarah & John Wedding 245 assets indexed', time: '2m ago', unread: true },
+    { id: 2, title: 'Low light warning', desc: 'Batch 04 has 21 high-ISO shots', time: '14m ago', unread: true },
+    { id: 3, title: 'Smart Bucket Sync', desc: '8,942 human subjects mapped across catalog', time: '1h ago', unread: false }
+  ];
+
+  return (
+    <>
+      {/* DESKTOP SIDEBAR */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-full w-[240px] lg:w-[260px] bg-[#060d20] z-50 flex-col border-r border-white/10 shadow-[4px_0_24px_rgba(0,0,0,0.4)] select-none">
+        {/* Brand Header */}
+        <div 
+          onClick={() => onTabChange('workspace')}
+          className="p-5 lg:p-6 flex items-center gap-3 cursor-pointer group"
+        >
+          <img 
+            alt="LensFlow Logo" 
+            className="h-7 lg:h-8 w-auto object-contain transition-transform group-hover:scale-105" 
+            src={LOGO_URL} 
+          />
+          <span className="font-['Geist'] text-lg lg:text-xl font-bold tracking-tight uppercase text-[#dbe2fd]">
+            LensFlow
+          </span>
+        </div>
+
+        {/* Primary Navigation Links */}
+        <nav className="flex-1 px-3 space-y-1 mt-1 overflow-y-auto hide-scrollbar">
+          <button
+            onClick={() => onTabChange('workspace')}
+            className={`w-full flex items-center px-3.5 py-2.5 rounded-xl transition-all text-left group ${
+              currentTab === 'workspace'
+                ? 'bg-[#171f33] text-[#6366f1] border-l-4 border-[#6366f1] font-semibold shadow-sm'
+                : 'text-[#94a3b8] hover:bg-[#171f33]/60 hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined mr-3 text-lg lg:text-xl group-hover:text-[#6366f1] transition-colors">
+              space_dashboard
+            </span>
+            <span className="font-data-mono text-xs uppercase tracking-wider">Workspace</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('library')}
+            className={`w-full flex items-center px-3.5 py-2.5 rounded-xl transition-all text-left group ${
+              currentTab === 'library'
+                ? 'bg-[#171f33] text-[#6366f1] border-l-4 border-[#6366f1] font-semibold shadow-sm'
+                : 'text-[#94a3b8] hover:bg-[#171f33]/60 hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined mr-3 text-lg lg:text-xl group-hover:text-[#6366f1] transition-colors">
+              photo_library
+            </span>
+            <span className="font-data-mono text-xs uppercase tracking-wider">Library</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('ingestion')}
+            className={`w-full flex items-center px-3.5 py-2.5 rounded-xl transition-all text-left group ${
+              currentTab === 'ingestion'
+                ? 'bg-[#171f33] text-[#6366f1] border-l-4 border-[#6366f1] font-semibold shadow-sm'
+                : 'text-[#94a3b8] hover:bg-[#171f33]/60 hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined mr-3 text-lg lg:text-xl group-hover:text-[#6366f1] transition-colors">
+              psychology
+            </span>
+            <span className="font-data-mono text-xs uppercase tracking-wider">AI Ingestion</span>
+          </button>
+
+          {/* Smart Buckets Header */}
+          <div className="pt-5 pb-2 px-3.5 flex items-center justify-between">
+            <span className="text-[10px] font-label-caps text-[#908fa0] uppercase tracking-widest">
+              Smart Buckets
+            </span>
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#6366f1] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#6366f1]"></span>
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                onBucketCategoryChange('humans');
+                onTabChange('buckets');
+              }}
+              className={`w-full flex items-center px-3.5 py-2 rounded-xl transition-all text-left text-xs font-data-mono ${
+                currentTab === 'buckets' && currentBucketCategory === 'humans'
+                  ? 'bg-[#171f33] text-[#6366f1] border-l-2 border-[#6366f1] font-semibold'
+                  : 'text-[#94a3b8] hover:text-[#dbe2fd] hover:bg-[#171f33]/40'
+              }`}
+            >
+              <span className="material-symbols-outlined mr-2.5 text-base opacity-80">face</span>
+              <span>Humans</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onBucketCategoryChange('nonhuman');
+                onTabChange('buckets');
+              }}
+              className={`w-full flex items-center px-3.5 py-2 rounded-xl transition-all text-left text-xs font-data-mono ${
+                currentTab === 'buckets' && currentBucketCategory === 'nonhuman'
+                  ? 'bg-[#171f33] text-[#6366f1] border-l-2 border-[#6366f1] font-semibold'
+                  : 'text-[#94a3b8] hover:text-[#dbe2fd] hover:bg-[#171f33]/40'
+              }`}
+            >
+              <span className="material-symbols-outlined mr-2.5 text-base opacity-80">category</span>
+              <span>Non-Human</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onBucketCategoryChange('videos');
+                onTabChange('buckets');
+              }}
+              className={`w-full flex items-center px-3.5 py-2 rounded-xl transition-all text-left text-xs font-data-mono ${
+                currentTab === 'buckets' && currentBucketCategory === 'videos'
+                  ? 'bg-[#171f33] text-[#6366f1] border-l-2 border-[#6366f1] font-semibold'
+                  : 'text-[#94a3b8] hover:text-[#dbe2fd] hover:bg-[#171f33]/40'
+              }`}
+            >
+              <span className="material-symbols-outlined mr-2.5 text-base opacity-80">movie</span>
+              <span>Videos</span>
+            </button>
+          </div>
+        </nav>
+
+        {/* Quick Ingest & Settings in Sidebar */}
+        <div className="p-3 lg:p-4 border-t border-white/10 space-y-2">
+          <button
+            onClick={onOpenUpload}
+            className="w-full py-2.5 px-3 rounded-xl bg-[#6366f1]/10 border border-[#6366f1]/30 text-[#6366f1] hover:bg-[#6366f1]/20 font-data-mono text-xs flex items-center justify-center gap-2 transition-colors uppercase tracking-wider"
+          >
+            <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
+            Upload / Ingest
+          </button>
+
+          <button
+            onClick={() => onTabChange('settings')}
+            className={`w-full flex items-center px-3.5 py-2 rounded-xl text-[#94a3b8] hover:bg-[#171f33] hover:text-[#dbe2fd] transition-all group ${
+              currentTab === 'settings' ? 'bg-[#171f33] text-[#6366f1]' : ''
+            }`}
+          >
+            <span className="material-symbols-outlined mr-3 text-lg">settings</span>
+            <span className="font-data-mono text-xs uppercase tracking-wider">Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* DESKTOP TOP HEADER */}
+      <header className="hidden md:flex fixed top-0 left-[240px] lg:left-[260px] right-0 h-16 lg:h-20 bg-[#0b1326]/85 backdrop-blur-2xl border-b border-white/10 z-40 items-center justify-between px-5 lg:px-8">
+        {/* Search Bar - Responsive constraint */}
+        <div className="relative flex items-center bg-[#171f33] rounded-full px-4 py-2 w-full max-w-xs md:max-w-sm lg:max-w-md border border-white/10 focus-within:border-[#6366f1]/50 focus-within:ring-1 focus-within:ring-[#6366f1]/50 transition-all">
+          <span className="material-symbols-outlined text-[#908fa0] text-base shrink-0">search</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search catalog (e.g. 'Bride', 'Raw', 'Tokyo')..."
+            className="bg-transparent border-none focus:outline-none text-xs text-[#dbe2fd] ml-2.5 w-full placeholder:text-[#908fa0]/60 min-w-0"
+          />
+          {searchQuery && (
+            <button 
+              onClick={() => onSearchChange('')}
+              className="text-[#908fa0] hover:text-white p-0.5 ml-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Right Actions */}
+        <div className="flex items-center gap-3 lg:gap-5 shrink-0">
+          <button
+            onClick={onOpenNewProject}
+            className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#171f33] border border-white/10 hover:bg-[#222a3e] text-xs font-data-mono text-[#dbe2fd] transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm text-[#6366f1]">add</span>
+            New Shoot
+          </button>
+
+          {/* Notifications Dropdown */}
+          <div className="relative">
+            <button 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 rounded-full text-[#c7c4d7] hover:text-white hover:bg-[#171f33] transition-colors"
+              aria-label="Notifications"
+            >
+              <span className="material-symbols-outlined text-xl">notifications</span>
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#6366f1] rounded-full border-2 border-[#0b1326]"></span>
+            </button>
+
+            {showNotifications && (
+              <div className="absolute right-0 mt-3 w-72 sm:w-80 max-w-[90vw] bg-[#171f33] border border-white/15 rounded-2xl shadow-2xl p-4 z-50">
+                <div className="flex items-center justify-between pb-2.5 border-b border-white/10 mb-2.5">
+                  <h4 className="font-['Geist'] text-xs font-semibold text-[#dbe2fd]">Notifications</h4>
+                  <span className="text-[10px] font-data-mono text-[#6366f1]">2 Unread</span>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {notifications.map((item) => (
+                    <div key={item.id} className="p-2.5 rounded-xl bg-[#0b1326]/60 hover:bg-[#0b1326] transition-colors cursor-pointer">
+                      <div className="flex justify-between items-start">
+                        <span className="font-['Geist'] text-xs font-medium text-white">{item.title}</span>
+                        <span className="text-[9px] font-data-mono text-[#908fa0]">{item.time}</span>
+                      </div>
+                      <p className="text-[11px] text-[#94a3b8] mt-1 line-clamp-2">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="h-6 w-[1px] bg-white/10"></div>
+
+          {/* User Profile */}
+          <div className="flex items-center gap-2">
+            <div
+              onClick={() => onTabChange('settings')}
+              className="flex items-center gap-2.5 cursor-pointer group"
+            >
+              <div className="text-right hidden lg:block max-w-[140px]">
+                <div className="text-[11px] font-label-caps text-[#dbe2fd] group-hover:text-[#6366f1] transition-colors uppercase truncate">
+                  {displayName}
+                </div>
+                <div className="text-[9px] font-data-mono text-[#908fa0] uppercase tracking-wider">
+                  {isSupabaseConfigured && user ? 'Signed In' : 'ID: 8821'}
+                </div>
+              </div>
+              <img
+                alt="Profile"
+                className="w-8 h-8 lg:w-9 lg:h-9 rounded-full object-cover ring-1 ring-white/15 group-hover:ring-[#6366f1] transition-all"
+                src={avatarUrl}
+              />
+            </div>
+            {isSupabaseConfigured && user && (
+              <button
+                onClick={signOut}
+                title="Sign out"
+                aria-label="Sign out"
+                className="p-2 rounded-full text-[#908fa0] hover:text-white hover:bg-[#171f33] transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* MOBILE TOP HEADER */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-50 bg-[#0b1326]/92 backdrop-blur-xl border-b border-white/10 shadow-[0_1px_8px_rgba(0,0,0,0.3)]">
+        <div className="h-14 px-4 flex items-center justify-between">
+          <div 
+            onClick={() => onTabChange('workspace')}
+            className="flex items-center gap-2.5 cursor-pointer"
+          >
+            <img 
+              alt="LensFlow Logo" 
+              className="h-6 w-auto object-contain" 
+              src={LOGO_URL} 
+            />
+            <span className="font-['Geist'] text-base font-bold text-[#dbe2fd] tracking-tight">
+              LensFlow
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button 
+              onClick={() => setShowMobileSearch(!showMobileSearch)}
+              className="w-8 h-8 rounded-full bg-[#171f33] border border-white/10 flex items-center justify-center text-[#908fa0] hover:text-white"
+              aria-label="Toggle Search"
+            >
+              <span className="material-symbols-outlined text-[18px]">search</span>
+            </button>
+
+            <button 
+              onClick={onOpenUpload}
+              className="w-8 h-8 rounded-full bg-[#6366f1]/20 border border-[#6366f1]/40 flex items-center justify-center text-[#c0c1ff]"
+              aria-label="Upload media"
+            >
+              <span className="material-symbols-outlined text-[18px]">add</span>
+            </button>
+
+            <button 
+              onClick={() => onTabChange('settings')}
+              className="p-1"
+              aria-label="Settings"
+            >
+              <img 
+                alt="Profile" 
+                className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20" 
+                src={avatarUrl} 
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Search Bar Expansion */}
+        {showMobileSearch && (
+          <div className="px-4 pb-3 pt-1">
+            <div className="flex items-center bg-[#171f33] rounded-full px-3 py-1.5 border border-[#6366f1]/40">
+              <span className="material-symbols-outlined text-[#908fa0] text-sm">search</span>
+              <input
+                type="text"
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search catalog..."
+                className="bg-transparent border-none focus:outline-none text-xs text-[#dbe2fd] ml-2 w-full placeholder:text-[#908fa0]/60 min-w-0"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => onSearchChange('')}
+                  className="text-[#908fa0] hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* MOBILE BOTTOM NAVIGATION */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#171f33]/95 backdrop-blur-xl border-t border-white/10">
+        <div className="flex justify-around items-center h-14 px-2">
+          <button
+            onClick={() => onTabChange('workspace')}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-1 transition-colors ${
+              currentTab === 'workspace' ? 'text-[#6366f1] font-semibold' : 'text-[#94a3b8]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">grid_view</span>
+            <span className="font-data-mono text-[9px] tracking-wider uppercase">Workspace</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('library')}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-1 transition-colors ${
+              currentTab === 'library' ? 'text-[#6366f1] font-semibold' : 'text-[#94a3b8]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">photo_library</span>
+            <span className="font-data-mono text-[9px] tracking-wider uppercase">Library</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('ingestion')}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-1 transition-colors ${
+              currentTab === 'ingestion' ? 'text-[#6366f1] font-semibold' : 'text-[#94a3b8]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">cloud_upload</span>
+            <span className="font-data-mono text-[9px] tracking-wider uppercase">Ingestion</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('buckets')}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 py-1 transition-colors ${
+              currentTab === 'buckets' ? 'text-[#6366f1] font-semibold' : 'text-[#94a3b8]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">database</span>
+            <span className="font-data-mono text-[9px] tracking-wider uppercase">Buckets</span>
+          </button>
+        </div>
+      </nav>
+    </>
+  );
+};

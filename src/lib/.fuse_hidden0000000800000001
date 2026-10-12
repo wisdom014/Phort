@@ -1,0 +1,181 @@
+import { MediaAsset } from '../types';
+import { createStoreZip, ZipEntry } from './zip';
+
+/**
+ * Export catalog media and metadata.
+ *
+ * Two shapes, both organized to match the Smart Buckets the user browses:
+ *  - ZIP: media files laid out in a folder tree (People / Objects & Scenes /
+ *    Videos → Good Lighting / Bad Lighting), optionally with a catalog.csv.
+ *  - CSV: one row per asset for spreadsheets, with the same bucket path in a
+ *    column so the organization is preserved even without folders.
+ *
+ * The video Good/Bad split uses the live lighting threshold from settings, so
+ * the export folders match exactly what the Videos bucket shows on screen.
+ */
+
+export type ExportFormatChoice = 'zip' | 'csv';
+
+export interface ExportOptions {
+  format: ExportFormatChoice;
+  includeCsvInZip: boolean;
+  lightingThreshold: number;
+}
+
+export interface ExportProgress {
+  done: number;
+  total: number;
+  label: string;
+  phase: 'fetching' | 'packaging' | 'done';
+}
+
+export interface ExportResult {
+  blob: Blob;
+  filename: string;
+  /** Media files actually written into the archive. */
+  fileCount: number;
+  /** Media whose bytes couldn't be fetched (skipped, still listed in CSV). */
+  missingCount: number;
+  /** Catalog rows described. */
+  rowCount: number;
+}
+
+/** The Smart Bucket folder an asset belongs to, mirroring the in-app buckets. */
+export function bucketPathFor(asset: MediaAsset, lightingThreshold: number): string {
+  if (asset.mediaKind === 'video') {
+    const lighting = asset.lightingQuality;
+    if (!lighting) return 'Videos/Unsorted';
+    return `Videos/${lighting.score >= lightingThreshold ? 'Good Lighting' : 'Bad Lighting'}`;
+  }
+  return asset.primaryCategory === 'human' ? 'People' : 'Objects & Scenes';
+}
+
+/** Strips characters that are invalid in file names on common filesystems. */
+function safeName(name: string): string {
+  return name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim() || 'file';
+}
+
+/** Ensures every archive path is unique, appending " (2)", " (3)"… on clashes. */
+function uniquePath(dir: string, file: string, used: Set<string>): string {
+  let candidate = `${dir}/${file}`;
+  if (!used.has(candidate.toLowerCase())) {
+    used.add(candidate.toLowerCase());
+    return candidate;
+  }
+  const dot = file.lastIndexOf('.');
+  const base = dot > 0 ? file.slice(0, dot) : file;
+  const ext = dot > 0 ? file.slice(dot) : '';
+  let i = 2;
+  for (;;) {
+    candidate = `${dir}/${base} (${i})${ext}`;
+    if (!used.has(candidate.toLowerCase())) {
+      used.add(candidate.toLowerCase());
+      return candidate;
+    }
+    i++;
+  }
+}
+
+function csvCell(value: unknown): string {
+  const s = value == null ? '' : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildCsv(assets: MediaAsset[], lightingThreshold: number): string {
+  const header = [
+    'File', 'Bucket', 'Type', 'Project', 'Category', 'Confidence %',
+    'Lighting score', 'Lighting', 'Duration (s)', 'Size (bytes)',
+    'Captured', 'Imported', 'Tags'
+  ];
+  const rows = assets.map((a) => [
+    a.fileName,
+    bucketPathFor(a, lightingThreshold),
+    a.mediaKind,
+    a.projectName ?? '',
+    a.primaryCategory,
+    Math.round((a.aiConfidenceScore ?? 0) * 100),
+    a.lightingQuality?.score ?? '',
+    a.lightingQuality ? (a.lightingQuality.score >= lightingThreshold ? 'Good' : 'Bad') : '',
+    a.durationSeconds ?? '',
+    a.fileSizeBytes ?? '',
+    a.capturedAt ?? '',
+    a.importedAt ?? '',
+    (a.tier1Tags ?? []).map((t) => t.label).join('; ')
+  ]);
+  return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+export async function buildExport(
+  assets: MediaAsset[],
+  options: ExportOptions,
+  onProgress?: (p: ExportProgress) => void
+): Promise<ExportResult> {
+  const { format, includeCsvInZip, lightingThreshold } = options;
+  const csv = buildCsv(assets, lightingThreshold);
+  const encoder = new TextEncoder();
+  // Byte-order mark so Excel opens the UTF-8 CSV with the right encoding.
+  const csvBytes = () => encoder.encode('﻿' + csv);
+
+  if (format === 'csv') {
+    onProgress?.({ done: assets.length, total: assets.length, label: 'Catalog CSV', phase: 'done' });
+    return {
+      blob: new Blob([csvBytes()], { type: 'text/csv;charset=utf-8' }),
+      filename: `lensflow-catalog-${today()}.csv`,
+      fileCount: 0,
+      missingCount: 0,
+      rowCount: assets.length
+    };
+  }
+
+  const entries: ZipEntry[] = [];
+  const used = new Set<string>();
+  let missing = 0;
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    onProgress?.({ done: i, total: assets.length, label: asset.fileName, phase: 'fetching' });
+    const dir = bucketPathFor(asset, lightingThreshold);
+    const url = asset.originalUrl || asset.thumbnailUrl;
+    try {
+      if (!url) throw new Error('missing source');
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      // eslint-disable-next-line no-await-in-loop
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      entries.push({ path: uniquePath(dir, safeName(asset.fileName), used), data: bytes });
+    } catch {
+      missing++;
+    }
+  }
+
+  if (includeCsvInZip) {
+    entries.push({ path: 'catalog.csv', data: csvBytes() });
+  }
+
+  onProgress?.({ done: assets.length, total: assets.length, label: 'Packaging…', phase: 'packaging' });
+  const blob = createStoreZip(entries);
+  onProgress?.({ done: assets.length, total: assets.length, label: 'Done', phase: 'done' });
+
+  return {
+    blob,
+    filename: `lensflow-export-${today()}.zip`,
+    fileCount: entries.length - (includeCsvInZip ? 1 : 0),
+    missingCount: missing,
+    rowCount: assets.length
+  };
+}
+
+/** Triggers a browser download for a generated blob. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}

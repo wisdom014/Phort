@@ -1,0 +1,290 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  NavigationTab, 
+  BucketCategory, 
+  MediaAsset, 
+  Project, 
+  LiveIngestionEvent, 
+  PipelineSettingsState 
+} from './types';
+import { 
+  INITIAL_PROJECTS, 
+  INITIAL_ASSETS, 
+  INITIAL_LIVE_EVENTS 
+} from './data/seedData';
+import { Navigation } from './components/Navigation';
+import { WorkspaceView } from './components/WorkspaceView';
+import { BucketsView } from './components/BucketsView';
+import { IngestionView } from './components/IngestionView';
+import { LibraryView } from './components/LibraryView';
+import { SettingsView } from './components/SettingsView';
+import { UploadModal } from './components/UploadModal';
+import { NewProjectModal } from './components/NewProjectModal';
+import { EditTagsModal } from './components/EditTagsModal';
+import { AuthView } from './components/AuthView';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
+import { useAuth } from './lib/AuthContext';
+import { projectRowToProject, assetRowToAsset, assetToRow } from './lib/mappers';
+
+export function App() {
+  const { user, isLoading: authLoading } = useAuth();
+  const [currentTab, setCurrentTab] = useState<NavigationTab>('workspace');
+  const [currentBucketCategory, setCurrentBucketCategory] = useState<BucketCategory>('humans');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // State Stores
+  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  const [assets, setAssets] = useState<MediaAsset[]>(INITIAL_ASSETS);
+  const [liveEvents, setLiveEvents] = useState<LiveIngestionEvent[]>(INITIAL_LIVE_EVENTS);
+  const [selectedAssetForInspector, setSelectedAssetForInspector] = useState<MediaAsset | null>(INITIAL_ASSETS[0]);
+  const [isLoadingRemote, setIsLoadingRemote] = useState(isSupabaseConfigured);
+  const [activeProjectId, setActiveProjectId] = useState<string>(INITIAL_PROJECTS[0]?.id ?? 'proj-1');
+
+  // Load real data from Supabase once a user is signed in (falls back to seed/demo data otherwise).
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user) return;
+
+    (async () => {
+      const [{ data: projectRows, error: projErr }, { data: assetRows, error: assetErr }] = await Promise.all([
+        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('media_assets').select('*').order('created_at', { ascending: false })
+      ]);
+
+      if (!projErr && projectRows && projectRows.length > 0) {
+        const loadedProjects = projectRows.map(projectRowToProject);
+        setProjects(loadedProjects);
+        setActiveProjectId(loadedProjects[0].id);
+      } else {
+        // Fresh account, no projects yet — start from an empty catalog rather than demo data.
+        setProjects([]);
+        setAssets([]);
+        setSelectedAssetForInspector(null);
+      }
+
+      if (!assetErr && assetRows && assetRows.length > 0) {
+        const loadedAssets = assetRows.map(assetRowToAsset);
+        setAssets(loadedAssets);
+        setSelectedAssetForInspector(loadedAssets[0]);
+      }
+
+      setIsLoadingRemote(false);
+    })();
+  }, [user?.id]);
+  
+  const [pipelineSettings, setPipelineSettings] = useState<PipelineSettingsState>({
+    tier1Threshold: 0.90,
+    tier2Threshold: 0.75,
+    requireHumanReviewForPeople: true,
+    strictMoodMatching: false,
+    activeVisionCore: true,
+    activeSemanticTagging: true,
+    facialRecognitionEnabled: true
+  });
+
+  // Modals state
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<MediaAsset | null>(null);
+
+  // Asset Actions
+  const handleUploadSuccess = (newAssets: MediaAsset[]) => {
+    setAssets((prev) => [...newAssets, ...prev]);
+    
+    // Add live ingestion events
+    const newEvents: LiveIngestionEvent[] = newAssets.map((asset) => ({
+      id: `ev-${Date.now()}-${Math.random()}`,
+      timestamp: new Date().toLocaleTimeString(),
+      type: asset.primaryCategory === 'human' ? 'subject' : 'object',
+      message: `${asset.primaryCategory === 'human' ? 'Subject' : 'Object'} auto-classified: ${asset.tier1Tags[0]?.label || 'Media'}`,
+      target: asset.fileName,
+      subtext: `Routed to ${asset.autoOrganizedBucket}`,
+      confidence: asset.aiConfidenceScore
+    }));
+    
+    setLiveEvents((prev) => [...newEvents, ...prev]);
+  };
+
+  const handleCreateProject = (newProject: Project) => {
+    setProjects((prev) => [newProject, ...prev]);
+    setActiveProjectId(newProject.id);
+  };
+
+  const handleApproveRoute = (assetId: string) => {
+    setAssets((prev) =>
+      prev.map((a) => (a.id === assetId ? { ...a, routeStatus: 'auto_routed' } : a))
+    );
+    if (isSupabaseConfigured) {
+      supabase.from('media_assets').update({ route_status: 'auto_routed' }).eq('id', assetId);
+    }
+  };
+
+  const handleSaveTags = (updatedAsset: MediaAsset) => {
+    setAssets((prev) =>
+      prev.map((a) => (a.id === updatedAsset.id ? updatedAsset : a))
+    );
+    if (selectedAssetForInspector?.id === updatedAsset.id) {
+      setSelectedAssetForInspector(updatedAsset);
+    }
+    if (isSupabaseConfigured) {
+      supabase.from('media_assets').update(assetToRow(updatedAsset)).eq('id', updatedAsset.id);
+    }
+  };
+
+  const handleToggleAssetSelection = (assetId: string) => {
+    setAssets((prev) =>
+      prev.map((a) => (a.id === assetId ? { ...a, isSelected: !a.isSelected } : a))
+    );
+  };
+
+  const handleSelectAllAssets = () => {
+    setAssets((prev) => prev.map((a) => ({ ...a, isSelected: true })));
+  };
+
+  const handleDeselectAllAssets = () => {
+    setAssets((prev) => prev.map((a) => ({ ...a, isSelected: false })));
+  };
+
+  const handleDeleteSelected = () => {
+    const idsToDelete = assets.filter((a) => a.isSelected).map((a) => a.id);
+    setAssets((prev) => prev.filter((a) => !a.isSelected));
+    if (isSupabaseConfigured && idsToDelete.length > 0) {
+      supabase.from('media_assets').delete().in('id', idsToDelete);
+    }
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    const proj = projects.find((p) => p.id === projectId);
+    if (proj) {
+      setActiveProjectId(proj.id);
+      setSearchQuery(proj.title);
+      setCurrentTab('library');
+    }
+  };
+
+  if (isSupabaseConfigured && authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0b1326] flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  if (isSupabaseConfigured && !user) {
+    return <AuthView />;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0b1326] text-[#dbe2fd] flex flex-col antialiased selection:bg-[#6366f1] selection:text-white">
+      {/* Navigation Layer */}
+      <Navigation
+        currentTab={currentTab}
+        onTabChange={(tab) => {
+          setCurrentTab(tab);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        currentBucketCategory={currentBucketCategory}
+        onBucketCategoryChange={setCurrentBucketCategory}
+        searchQuery={searchQuery}
+        onSearchChange={(q) => {
+          setSearchQuery(q);
+          if (q && currentTab !== 'library') {
+            setCurrentTab('library');
+          }
+        }}
+        onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenNewProject={() => setIsNewProjectOpen(true)}
+      />
+
+      {/* Main Content Viewport */}
+      <main className="flex-1 md:pl-[240px] lg:pl-[260px] md:pt-24 pt-16 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full transition-all pb-24 md:pb-12 min-h-screen">
+        {currentTab === 'workspace' && (
+          <WorkspaceView
+            projects={projects}
+            assets={assets}
+            liveEvents={liveEvents}
+            onSelectProject={handleSelectProject}
+            onNavigateTab={setCurrentTab}
+            onSelectBucket={(cat) => {
+              setCurrentBucketCategory(cat);
+              setCurrentTab('buckets');
+            }}
+            onOpenUpload={() => setIsUploadOpen(true)}
+            onOpenNewProject={() => setIsNewProjectOpen(true)}
+          />
+        )}
+
+        {currentTab === 'library' && (
+          <LibraryView
+            assets={assets}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSelectAssetForInspector={(asset) => {
+              setSelectedAssetForInspector(asset);
+              // Videos live in their own bucket regardless of subject.
+              if (asset.mediaKind === 'video') setCurrentBucketCategory('videos');
+              else if (asset.primaryCategory === 'human') setCurrentBucketCategory('humans');
+              else setCurrentBucketCategory('nonhuman');
+              setCurrentTab('buckets');
+            }}
+            onToggleAssetSelection={handleToggleAssetSelection}
+            onSelectAllAssets={handleSelectAllAssets}
+            onDeselectAllAssets={handleDeselectAllAssets}
+            onEditTags={(asset) => setEditingAsset(asset)}
+            onDeleteSelected={handleDeleteSelected}
+          />
+        )}
+
+        {currentTab === 'ingestion' && (
+          <IngestionView
+            assets={assets}
+            pipelineSettings={pipelineSettings}
+            onUpdateSettings={setPipelineSettings}
+            onApproveAsset={handleApproveRoute}
+            onEditTags={(asset) => setEditingAsset(asset)}
+            onOpenUpload={() => setIsUploadOpen(true)}
+          />
+        )}
+
+        {currentTab === 'buckets' && (
+          <BucketsView
+            category={currentBucketCategory}
+            onCategoryChange={setCurrentBucketCategory}
+            assets={assets}
+            selectedAsset={selectedAssetForInspector}
+            onSelectAsset={setSelectedAssetForInspector}
+            onEditTags={(asset) => setEditingAsset(asset)}
+          />
+        )}
+
+        {currentTab === 'settings' && <SettingsView />}
+      </main>
+
+      {/* Upload / Ingestion Modal */}
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploadSuccess={handleUploadSuccess}
+        targetProjectId={activeProjectId}
+        targetProjectName={projects.find((p) => p.id === activeProjectId)?.title ?? 'General'}
+      />
+
+      {/* New Project Modal — also handles folder drag-and-drop ingestion */}
+      <NewProjectModal
+        isOpen={isNewProjectOpen}
+        onClose={() => setIsNewProjectOpen(false)}
+        onCreateProject={handleCreateProject}
+        onIngestComplete={handleUploadSuccess}
+      />
+
+      {/* Edit Tags / AI Taxonomy Modal */}
+      <EditTagsModal
+        asset={editingAsset}
+        isOpen={!!editingAsset}
+        onClose={() => setEditingAsset(null)}
+        onSave={handleSaveTags}
+      />
+    </div>
+  );
+}
+
+export default App;

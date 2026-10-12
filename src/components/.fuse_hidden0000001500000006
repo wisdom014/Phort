@@ -1,0 +1,429 @@
+import React, { useState } from 'react';
+import { MediaAsset } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface LibraryViewProps {
+  assets: MediaAsset[];
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  onSelectAssetForInspector: (asset: MediaAsset) => void;
+  onToggleAssetSelection: (assetId: string) => void;
+  onSelectAllAssets: () => void;
+  onDeselectAllAssets: () => void;
+  onEditTags: (asset: MediaAsset) => void;
+  onDeleteSelected: () => void;
+}
+
+export const LibraryView: React.FC<LibraryViewProps> = ({
+  assets,
+  searchQuery,
+  onSearchChange,
+  onSelectAssetForInspector,
+  onToggleAssetSelection,
+  onSelectAllAssets,
+  onDeselectAllAssets,
+  onEditTags,
+  onDeleteSelected
+}) => {
+  const [filterType, setFilterType] = useState<'all' | 'photos' | 'videos' | 'selected'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'human' | 'nonhuman'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortBy, setSortBy] = useState<'newest' | 'confidence' | 'name'>('newest');
+  const [exportToast, setExportToast] = useState(false);
+
+  const handleExportBatch = () => {
+    setExportToast(true);
+    setTimeout(() => setExportToast(false), 2500);
+  };
+
+  const selectedCount = assets.filter((a) => a.isSelected).length;
+
+  const filteredAssets = assets.filter((asset) => {
+    // Search Query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = asset.fileName.toLowerCase().includes(q);
+      const matchProject = asset.projectName?.toLowerCase().includes(q);
+      const matchBucket = asset.autoOrganizedBucket.toLowerCase().includes(q);
+      const matchT1 = asset.tier1Tags.some((t) => t.label.toLowerCase().includes(q));
+      const matchT2 = asset.tier2Tags.some((t) => t.label.toLowerCase().includes(q));
+      const matchMood = asset.aiMoodAnalysis?.primaryMood.toLowerCase().includes(q);
+      if (!matchName && !matchProject && !matchBucket && !matchT1 && !matchT2 && !matchMood) return false;
+    }
+
+    // Media Type filter
+    if (filterType === 'selected' && !asset.isSelected) return false;
+    if (filterType === 'videos' && asset.mediaKind !== 'video') return false;
+    if (filterType === 'photos' && asset.mediaKind === 'video') return false;
+
+    // Category filter
+    if (categoryFilter !== 'all' && asset.primaryCategory !== categoryFilter) return false;
+
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === 'confidence') return b.aiConfidenceScore - a.aiConfidenceScore;
+    if (sortBy === 'name') return a.fileName.localeCompare(b.fileName);
+    return new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime();
+  });
+
+  return (
+    <div className="space-y-6 pb-24">
+      {exportToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed top-20 right-4 sm:right-8 z-50 bg-[#171f33] border border-[#10b981]/50 text-[#dbe2fd] px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-['Geist'] text-xs sm:text-sm"
+        >
+          <span className="material-symbols-outlined text-[#10b981] text-base sm:text-lg">check_circle</span>
+          <span>Batch export complete. Sidecar XMP files generated.</span>
+        </motion.div>
+      )}
+
+      {/* Header & Search */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-['Geist'] text-2xl sm:text-3xl font-bold tracking-tight text-[#dbe2fd]">
+            Media Library
+          </h1>
+          <p className="text-[#94a3b8] text-xs mt-1 font-data-mono">
+            {filteredAssets.length} of {assets.length} total catalog assets
+          </p>
+        </div>
+
+        {/* View mode & Sort controls */}
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="flex items-center bg-[#171f33] p-1 rounded-xl border border-white/10">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                viewMode === 'grid' ? 'bg-[#6366f1] text-white' : 'text-[#94a3b8] hover:text-white'
+              }`}
+              title="Grid View"
+            >
+              <span className="material-symbols-outlined text-base sm:text-lg">grid_view</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
+                viewMode === 'list' ? 'bg-[#6366f1] text-white' : 'text-[#94a3b8] hover:text-white'
+              }`}
+              title="List View"
+            >
+              <span className="material-symbols-outlined text-base sm:text-lg">format_list_bulleted</span>
+            </button>
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="bg-[#171f33] border border-white/10 text-xs font-data-mono text-[#dbe2fd] rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 focus:outline-none"
+          >
+            <option value="newest">Sort: Newest</option>
+            <option value="confidence">Sort: Confidence</option>
+            <option value="name">Sort: Filename</option>
+          </select>
+        </div>
+      </section>
+
+      {/* Multi-filter Bar */}
+      <section className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 bg-[#171f33]/60 p-2.5 sm:p-3.5 rounded-2xl border border-white/10">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => setFilterType('all')}
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors ${
+              filterType === 'all'
+                ? 'bg-[#6366f1] text-white font-semibold'
+                : 'bg-[#0b1326] text-[#94a3b8] hover:text-[#dbe2fd]'
+            }`}
+          >
+            All Media ({assets.length})
+          </button>
+          <button
+            onClick={() => setCategoryFilter(categoryFilter === 'human' ? 'all' : 'human')}
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors flex items-center gap-1.5 ${
+              categoryFilter === 'human'
+                ? 'bg-[#6366f1]/20 text-[#c0c1ff] border border-[#6366f1]/40 font-semibold'
+                : 'bg-[#0b1326] text-[#94a3b8] hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">face</span>
+            Humans
+          </button>
+          <button
+            onClick={() => setCategoryFilter(categoryFilter === 'nonhuman' ? 'all' : 'nonhuman')}
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors flex items-center gap-1.5 ${
+              categoryFilter === 'nonhuman'
+                ? 'bg-[#6366f1]/20 text-[#c0c1ff] border border-[#6366f1]/40 font-semibold'
+                : 'bg-[#0b1326] text-[#94a3b8] hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">category</span>
+            Non-Human
+          </button>
+          <button
+            onClick={() => setFilterType(filterType === 'videos' ? 'all' : 'videos')}
+            className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors flex items-center gap-1.5 ${
+              filterType === 'videos'
+                ? 'bg-[#6366f1]/20 text-[#c0c1ff] border border-[#6366f1]/40 font-semibold'
+                : 'bg-[#0b1326] text-[#94a3b8] hover:text-[#dbe2fd]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">movie</span>
+            Videos
+          </button>
+
+          {selectedCount > 0 && (
+            <button
+              onClick={() => setFilterType('selected')}
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-data-mono transition-colors ${
+                filterType === 'selected'
+                  ? 'bg-[#10b981] text-slate-950 font-bold'
+                  : 'bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40'
+              }`}
+            >
+              Selected ({selectedCount})
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {selectedCount > 0 ? (
+            <button
+              onClick={onDeselectAllAssets}
+              className="text-xs font-data-mono text-[#908fa0] hover:text-white underline"
+            >
+              Clear Selection
+            </button>
+          ) : (
+            <button
+              onClick={onSelectAllAssets}
+              className="text-xs font-data-mono text-[#6366f1] hover:underline"
+            >
+              Select All
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* Grid or List View of Assets */}
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+          {filteredAssets.map((asset) => {
+            const isSelected = !!asset.isSelected;
+            const ext = asset.fileName.split('.').pop()?.toUpperCase() || 'RAW';
+            const primaryTag = asset.tier2Tags[0]?.label || asset.tier1Tags[0]?.label || 'INDEXED';
+
+            return (
+              <div
+                key={asset.id}
+                className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 bg-[#0b1326] ${
+                  isSelected
+                    ? 'ring-2 ring-[#6366f1] shadow-[0_0_20px_rgba(99,102,241,0.4)]'
+                    : 'border border-white/10 hover:border-[#6366f1]/50'
+                }`}
+              >
+                {/* Preview — video clips need a <video> element to render a poster frame */}
+                {asset.mediaKind === 'video' ? (
+                  <video
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    src={asset.thumbnailUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    onClick={() => onSelectAssetForInspector(asset)}
+                  />
+                ) : (
+                  <img
+                    alt={asset.fileName}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    src={asset.thumbnailUrl}
+                    onClick={() => onSelectAssetForInspector(asset)}
+                  />
+                )}
+
+                {/* Gradient */}
+                <div 
+                  className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none"
+                ></div>
+
+                {/* Top Badge: Extension */}
+                <div className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 flex items-center gap-1 sm:gap-1.5 pointer-events-none">
+                  <span className="bg-black/70 backdrop-blur-md px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-label-caps text-[#c0c1ff] border border-white/10">
+                    {ext}
+                  </span>
+                  <span className="bg-[#10b981]/80 backdrop-blur-md px-1 sm:px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-data-mono text-white">
+                    {Math.round(asset.aiConfidenceScore * 100)}%
+                  </span>
+                </div>
+
+                {/* Selection Checkbox */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleAssetSelection(asset.id);
+                  }}
+                  className={`absolute top-2 right-2 sm:top-2.5 sm:right-2.5 w-5 h-5 sm:w-6 sm:h-6 rounded-lg flex items-center justify-center transition-all ${
+                    isSelected
+                      ? 'bg-[#6366f1] text-white shadow-md'
+                      : 'bg-black/50 border border-white/30 text-transparent hover:border-white'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-xs sm:text-sm font-bold">check</span>
+                </button>
+
+                {/* Bottom Overlay Info */}
+                <div 
+                  onClick={() => onSelectAssetForInspector(asset)}
+                  className="absolute bottom-2 inset-x-2 sm:bottom-2.5 sm:inset-x-2.5 flex flex-col justify-end text-xs font-data-mono"
+                >
+                  <div className="truncate text-white font-medium text-[10px] sm:text-[11px]">
+                    {asset.fileName}
+                  </div>
+                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-[#908fa0] mt-0.5">
+                    <span className="text-[#22d3ee] truncate max-w-[80px]">#{primaryTag.toLowerCase()}</span>
+                    <span className="shrink-0">{asset.importedAt}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* List View with horizontal overflow wrapper */
+        <div className="bg-[#171f33] rounded-2xl border border-white/10 overflow-hidden shadow-lg">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-data-mono min-w-[650px]">
+              <thead className="bg-[#0b1326] text-[#908fa0] border-b border-white/10 font-label-caps uppercase text-[10px] sm:text-xs">
+                <tr>
+                  <th className="p-3 sm:p-4 w-10 sm:w-12 text-center">Select</th>
+                  <th className="p-3 sm:p-4">Thumbnail &amp; File</th>
+                  <th className="p-3 sm:p-4">Project</th>
+                  <th className="p-3 sm:p-4">Taxonomy</th>
+                  <th className="p-3 sm:p-4">Smart Bucket</th>
+                  <th className="p-3 sm:p-4">Confidence</th>
+                  <th className="p-3 sm:p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredAssets.map((asset) => (
+                  <tr
+                    key={asset.id}
+                    className={`hover:bg-[#222a3e]/50 transition-colors ${
+                      asset.isSelected ? 'bg-[#6366f1]/10' : ''
+                    }`}
+                  >
+                    <td className="p-3 sm:p-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={!!asset.isSelected}
+                        onChange={() => onToggleAssetSelection(asset.id)}
+                        className="w-4 h-4 rounded accent-[#6366f1]"
+                      />
+                    </td>
+                    <td className="p-3 sm:p-4 flex items-center gap-3">
+                      <img
+                        alt={asset.fileName}
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg object-cover bg-[#0b1326] shrink-0"
+                        src={asset.thumbnailUrl}
+                        onClick={() => onSelectAssetForInspector(asset)}
+                      />
+                      <div className="min-w-0">
+                        <div
+                          onClick={() => onSelectAssetForInspector(asset)}
+                          className="text-white font-medium hover:text-[#6366f1] cursor-pointer truncate max-w-[140px] sm:max-w-[200px]"
+                        >
+                          {asset.fileName}
+                        </div>
+                        <div className="text-[10px] text-[#908fa0]">{asset.importedAt}</div>
+                      </div>
+                    </td>
+                    <td className="p-3 sm:p-4 text-[#dbe2fd] truncate max-w-[120px]">{asset.projectName || 'General'}</td>
+                    <td className="p-3 sm:p-4">
+                      <span className="bg-[#6366f1]/20 text-[#c0c1ff] px-2 py-0.5 rounded text-[10px]">
+                        {asset.tier1Tags[0]?.label || 'HUMAN'}
+                      </span>
+                    </td>
+                    <td className="p-3 sm:p-4 text-[#22d3ee] truncate max-w-[120px]">{asset.autoOrganizedBucket}</td>
+                    <td className="p-3 sm:p-4">
+                      <span className="text-[#10b981] font-bold">
+                        {Math.round(asset.aiConfidenceScore * 100)}%
+                      </span>
+                    </td>
+                    <td className="p-3 sm:p-4 text-right">
+                      <button
+                        onClick={() => onEditTags(asset)}
+                        className="p-1 text-[#908fa0] hover:text-[#6366f1] transition-colors"
+                        title="Edit details"
+                      >
+                        <span className="material-symbols-outlined text-base">edit</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Multi-Select Action Bar */}
+      <AnimatePresence>
+        {selectedCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-50 bg-[#171f33]/95 backdrop-blur-xl border border-[#6366f1]/50 rounded-2xl px-3 sm:px-6 py-2.5 sm:py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.6)] flex items-center gap-2 sm:gap-6 max-w-[calc(100vw-1.5rem)]"
+          >
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-[#6366f1] text-white flex items-center justify-center text-[10px] sm:text-xs font-bold font-data-mono">
+                {selectedCount}
+              </span>
+              <span className="text-xs font-data-mono text-white font-medium hidden xs:inline">Selected</span>
+            </div>
+
+            <div className="h-5 sm:h-6 w-[1px] bg-white/15 shrink-0"></div>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto">
+              <button
+                onClick={handleExportBatch}
+                className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-[#6366f1] hover:bg-[#5254db] text-white rounded-lg text-xs font-data-mono font-semibold transition-colors flex items-center gap-1 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-sm">ios_share</span>
+                <span>Export</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const targetAsset = assets.find(a => a.isSelected);
+                  if (targetAsset) onEditTags(targetAsset);
+                }}
+                className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-[#0b1326] border border-white/10 hover:bg-[#222a3e] text-xs font-data-mono text-[#dbe2fd] rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-sm">label</span>
+                <span>Tags</span>
+              </button>
+
+              <button
+                onClick={onDeleteSelected}
+                className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/30 text-xs font-data-mono text-rose-300 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+                <span>Remove</span>
+              </button>
+
+              <button
+                onClick={onDeselectAllAssets}
+                className="p-1 text-[#908fa0] hover:text-white transition-colors"
+                title="Deselect"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
