@@ -6,6 +6,7 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    base: '/phort/',
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -16,9 +17,6 @@ export default defineConfig(() => {
     // dep pre-bundling keeps Vite from mangling that at dev time.
     optimizeDeps: {
       exclude: ['onnxruntime-web'],
-    },
-    build: {
-      chunkSizeWarningLimit: 3000,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
