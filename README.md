@@ -1,4 +1,4 @@
-# LensFlow
+# Phort
 
 Intelligent digital workspace and automated media categorization for photographers and
 visual creators. Uploaded photos and videos are analyzed **entirely in the browser** —

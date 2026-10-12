@@ -1,8 +1,8 @@
 # Third-Party Model Notices
 
-LensFlow's detection pipeline bundles pretrained model weights from third parties.
+Phort's detection pipeline bundles pretrained model weights from third parties.
 No AI API keys or cloud services are used — everything runs locally in the browser —
-but the weights themselves carry their own licenses, separate from LensFlow's own code license.
+but the weights themselves carry their own licenses, separate from Phort's own code license.
 
 ## YOLOv8n (`public/models/yolov8n.onnx`)
 
@@ -11,7 +11,7 @@ but the weights themselves carry their own licenses, separate from LensFlow's ow
 - **Why this matters**: Ultralytics distributes YOLOv8's pretrained weights under AGPL-3.0.
   That license's copyleft terms can extend to applications that use the weights, including
   network-accessible (SaaS) use — not just distributing the file itself. If you plan to ship
-  LensFlow as a closed-source product or SaaS, get your own legal read on this before launch,
+  Phort as a closed-source product or SaaS, get your own legal read on this before launch,
   or look into [Ultralytics' commercial/enterprise licensing](https://www.ultralytics.com/license)
   as an alternative. This notice is informational, not legal advice.
 - The specific file bundled here was obtained from a public GitHub-hosted mirror

@@ -11,11 +11,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
       <SettingsProvider>
-        <NotificationsProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <NotificationsProvider>
             <App />
-          </AuthProvider>
-        </NotificationsProvider>
+          </NotificationsProvider>
+        </AuthProvider>
       </SettingsProvider>
     </ThemeProvider>
   </StrictMode>,

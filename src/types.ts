@@ -1,5 +1,5 @@
 /**
- * LensFlow Type Definitions
+ * Phort Type Definitions
  */
 
 export type NavigationTab = 'workspace' | 'library' | 'ingestion' | 'buckets' | 'settings';

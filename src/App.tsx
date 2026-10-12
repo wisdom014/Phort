@@ -48,10 +48,15 @@ export function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || !user) return;
 
+    setProjects([]);
+    setAssets([]);
+    setSelectedAssetForInspector(null);
+    setIsLoadingRemote(true);
+
     (async () => {
       const [{ data: projectRows, error: projErr }, { data: assetRows, error: assetErr }] = await Promise.all([
-        supabase.from('projects').select('*').order('created_at', { ascending: false }),
-        supabase.from('media_assets').select('*').order('created_at', { ascending: false })
+        supabase.from('projects').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('media_assets').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
       ]);
 
       if (!projErr && projectRows && projectRows.length > 0) {
@@ -61,8 +66,6 @@ export function App() {
       } else {
         // Fresh account, no projects yet — start from an empty catalog rather than demo data.
         setProjects([]);
-        setAssets([]);
-        setSelectedAssetForInspector(null);
       }
 
       if (!assetErr && assetRows && assetRows.length > 0) {
@@ -181,18 +184,27 @@ export function App() {
     setAssets((prev) => prev.map((a) => ({ ...a, isSelected: false })));
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     const toDelete = assets.filter((a) => a.isSelected);
     if (toDelete.length === 0) return;
     const idsToDelete = toDelete.map((a) => a.id);
 
+    if (isSupabaseConfigured && idsToDelete.length > 0) {
+      if (!user) return;
+      await removeAssetsFromStorage(toDelete, user.id);
+      const { error } = await supabase
+        .from('media_assets')
+        .delete()
+        .eq('user_id', user.id)
+        .in('id', idsToDelete);
+      if (error) {
+        notify({ kind: 'warning', title: 'Delete failed', detail: error.message });
+        return;
+      }
+    }
+
     setAssets((prev) => prev.filter((a) => !a.isSelected));
     setSelectedAssetForInspector((cur) => (cur && idsToDelete.includes(cur.id) ? null : cur));
-
-    if (isSupabaseConfigured && idsToDelete.length > 0) {
-      if (user) removeAssetsFromStorage(toDelete, user.id);
-      supabase.from('media_assets').delete().in('id', idsToDelete);
-    }
 
     notify({
       kind: 'info',
@@ -209,18 +221,34 @@ export function App() {
     const project = projects.find((p) => p.id === projectId);
     const projectAssets = assets.filter((a) => a.projectId === projectId);
 
-    // Update local state first so the UI reflects the deletion immediately.
+    if (isSupabaseConfigured) {
+      if (!user) return;
+      await removeAssetsFromStorage(projectAssets, user.id);
+      // Assets first, then the project row they belong to.
+      const { error: assetDeleteError } = await supabase
+        .from('media_assets')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('project_id', projectId);
+      if (assetDeleteError) {
+        notify({ kind: 'warning', title: 'Project deletion failed', detail: assetDeleteError.message });
+        return;
+      }
+      const { error: projectDeleteError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('id', projectId);
+      if (projectDeleteError) {
+        notify({ kind: 'warning', title: 'Project deletion failed', detail: projectDeleteError.message });
+        return;
+      }
+    }
+
     setProjects((prev) => prev.filter((p) => p.id !== projectId));
     setAssets((prev) => prev.filter((a) => a.projectId !== projectId));
     setSelectedAssetForInspector((cur) => (cur && cur.projectId === projectId ? null : cur));
     setActiveProjectId((cur) => (cur === projectId ? '' : cur));
-
-    if (isSupabaseConfigured) {
-      if (user) await removeAssetsFromStorage(projectAssets, user.id);
-      // Assets first, then the project row they belong to.
-      await supabase.from('media_assets').delete().eq('project_id', projectId);
-      await supabase.from('projects').delete().eq('id', projectId);
-    }
 
     notify({ kind: 'info', title: 'Project deleted', detail: project?.title });
   };

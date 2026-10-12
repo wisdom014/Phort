@@ -1,4 +1,4 @@
-# LensFlow — Setup
+# Phort — Setup
 
 This app runs entirely client-side: React/Vite frontend, Supabase for auth/database/storage,
 and **all AI detection running locally in the browser** — no external AI API, no API key,
@@ -111,6 +111,26 @@ create policy "own projects" on projects
 
 create policy "own media" on media_assets
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Account-wide notifications, shared by every device signed into the account.
+create table if not exists notifications (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null check (kind in ('success', 'info', 'warning')),
+  title text not null,
+  detail text,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+alter table notifications enable row level security;
+
+create policy "own notifications" on notifications
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Required for the notification bell to update immediately on other devices.
+alter table notifications replica identity full;
+alter publication supabase_realtime add table notifications;
 ```
 
 **Storage needs the same treatment.** The `media` bucket should be private, with policies that

@@ -77,7 +77,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           className="p-5 lg:p-6 flex items-center gap-3 cursor-pointer"
         >
           <BrandMark />
-          <span className="text-lg lg:text-xl font-bold tracking-tight text-ink">LensFlow</span>
+          <span className="text-lg lg:text-xl font-bold tracking-tight text-ink">Phort</span>
         </div>
 
         {/* Primary navigation */}
@@ -234,7 +234,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             className="flex items-center gap-2.5 cursor-pointer"
           >
             <BrandMark />
-            <span className="text-base font-bold text-ink tracking-tight">LensFlow</span>
+            <span className="text-base font-bold text-ink tracking-tight">Phort</span>
           </div>
 
           <div className="flex items-center gap-1.5">

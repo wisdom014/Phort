@@ -154,7 +154,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,video/mp4,video/webm,video/quicktime,.cr2,.cr3,.raf,.arw,.nef,.dng,.raw"
+              accept="image/*,video/*,.cr2,.cr3,.raf,.arw,.nef,.dng,.raw"
               className="hidden"
               onChange={handleFiles}
             />

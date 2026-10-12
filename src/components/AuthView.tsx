@@ -57,7 +57,7 @@ export const AuthView: React.FC = () => {
           <span className="w-12 h-12 rounded-2xl bg-accent text-white flex items-center justify-center shadow-card mb-1">
             <span className="material-symbols-outlined text-[28px]">center_focus_strong</span>
           </span>
-          <h1 className="font-['Geist'] text-xl font-bold text-ink">LensFlow</h1>
+          <h1 className="font-['Geist'] text-xl font-bold text-ink">Phort</h1>
           <p className="text-xs text-ink-faint font-mono-data">
             {mode === 'login' ? 'Sign in to your workspace' : 'Create your workspace account'}
           </p>

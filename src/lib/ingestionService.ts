@@ -56,19 +56,21 @@ export async function ingestFile(
 
   if (isSupabaseConfigured && options.userId) {
     onProgress?.({ fileName: file.name, stage: 'uploading', message: 'Uploading to storage...' });
-    const path = `${options.userId}/${options.projectId}/${id}-${file.name}`;
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const path = `${options.userId}/${options.projectId}/${id}-${safeFileName}`;
     const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, {
       cacheControl: '3600',
       upsert: false,
       contentType: file.type || 'application/octet-stream'
     });
 
-    if (!uploadError) {
-      const { data: publicUrlData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
-      if (publicUrlData?.publicUrl) {
-        originalUrl = publicUrlData.publicUrl;
-        thumbnailUrl = publicUrlData.publicUrl;
-      }
+    if (uploadError) {
+      throw new Error(`Could not upload ${file.name}: ${uploadError.message}`);
+    }
+    const { data: publicUrlData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+    if (publicUrlData?.publicUrl) {
+      originalUrl = publicUrlData.publicUrl;
+      thumbnailUrl = publicUrlData.publicUrl;
     }
   }
 
@@ -157,7 +159,8 @@ export async function ingestFile(
  */
 export function assetStoragePaths(asset: MediaAsset, userId: string): string[] {
   const base = `${userId}/${asset.projectId}`;
-  const paths = [`${base}/${asset.id}-${asset.fileName}`];
+  const safeFileName = asset.fileName.replace(/[^a-zA-Z0-9._-]+/g, '_');
+  const paths = [`${base}/${asset.id}-${safeFileName}`];
   if (asset.mediaKind === 'video') paths.push(`${base}/${asset.id}-poster.jpg`);
   return paths;
 }
