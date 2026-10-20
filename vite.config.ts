@@ -19,7 +19,21 @@ export default defineConfig(() => {
       exclude: ['onnxruntime-web'],
     },
     build: {
-      chunkSizeWarningLimit: 3000,
+      chunkSizeWarningLimit: 1800,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('onnxruntime-web')) return 'vendor-onnx';
+            if (id.includes('@vladmandic/human')) return 'vendor-human';
+            if (id.includes('@supabase')) return 'vendor-supabase';
+            if (id.includes('motion')) return 'vendor-motion';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
+            return 'vendor';
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
